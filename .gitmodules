@@ -1,0 +1,4 @@
+[submodule "aria2-builder"]
+	path = aria2-builder
+	url = https://github.com/AnInsomniacy/aria2-builder.git
+	branch = master

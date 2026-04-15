@@ -1,0 +1,61 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    # Run weekly on Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Update aria2-builder submodule
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update submodule to latest upstream
+        id: update
+        run: |
+          OLD_SHA=$(git rev-parse HEAD:aria2-builder)
+          git submodule update --remote -- aria2-builder
+          NEW_SHA=$(git rev-parse HEAD:aria2-builder)
+
+          echo "old_sha=$OLD_SHA" >> "$GITHUB_OUTPUT"
+          echo "new_sha=$NEW_SHA" >> "$GITHUB_OUTPUT"
+
+          if [ "$OLD_SHA" != "$NEW_SHA" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Submodule updated: $OLD_SHA -> $NEW_SHA"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Submodule already up to date"
+          fi
+
+      - name: Commit updated gitlink
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add aria2-builder
+          git commit -m "chore: update aria2-builder submodule to ${{ steps.update.outputs.new_sha }}"
+          git push
+
+      - name: Trigger build workflow
+        if: steps.update.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-aria2.yml',
+              ref: 'master',
+            });

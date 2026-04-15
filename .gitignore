@@ -1,0 +1,14 @@
+# Build artifacts
+/work/
+*.ipk
+*.apk
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db

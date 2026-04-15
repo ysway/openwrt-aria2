@@ -1,0 +1,161 @@
+name: Build aria2
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '*.md'
+      - 'feed_template/**'
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      sdk_version:
+        description: 'OpenWrt SDK version (e.g. 24.10.0)'
+        required: false
+        default: '24.10.0'
+
+permissions:
+  contents: read
+
+env:
+  OPENWRT_SDK_VERSION: ${{ inputs.sdk_version || '24.10.0' }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Phase 1 targets
+        include:
+          - platform: x86_64
+            sdk_platform: x86_64
+          - platform: aarch64_generic
+            sdk_platform: aarch64_generic
+          - platform: arm_cortex-a7
+            sdk_platform: arm_cortex-a7
+          - platform: mipsel_24kc
+            sdk_platform: mipsel_24kc
+          # Phase 2 targets
+          - platform: arm_cortex-a9
+            sdk_platform: arm_cortex-a9
+          - platform: i386_pentium4
+            sdk_platform: i386_pentium4
+          - platform: mips_24kc
+            sdk_platform: mips_24kc
+          - platform: riscv64_generic
+            sdk_platform: riscv64_generic
+          # Phase 3 target
+          - platform: loongarch64_generic
+            sdk_platform: loongarch64_generic
+
+    container:
+      image: ghcr.io/openwrt/sdk:${{ matrix.sdk_platform }}-v${{ env.OPENWRT_SDK_VERSION }}
+      options: --user root
+
+    steps:
+      - name: Install host build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            autoconf automake autotools-dev autopoint libtool pkg-config \
+            gettext curl file bzip2 xz-utils upx-ucl ca-certificates \
+            binutils
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup SDK toolchain on PATH
+        id: sdk
+        run: |
+          # Locate the SDK staging_dir toolchain
+          SDK_HOME="${SDK_HOME:-/builder}"
+          TOOLCHAIN_DIR=$(find "$SDK_HOME"/staging_dir -maxdepth 1 -name 'toolchain-*' -type d | head -1)
+          if [ -z "$TOOLCHAIN_DIR" ]; then
+            echo "ERROR: Could not find SDK toolchain directory"
+            ls -la "$SDK_HOME"/staging_dir/ || true
+            exit 1
+          fi
+
+          # Add toolchain binaries to PATH
+          echo "$TOOLCHAIN_DIR/bin" >> "$GITHUB_PATH"
+
+          # Also add target tools
+          TARGET_DIR=$(find "$SDK_HOME"/staging_dir -maxdepth 1 -name 'target-*' -type d | head -1)
+          if [ -n "$TARGET_DIR" ]; then
+            echo "TARGET_STAGING=$TARGET_DIR" >> "$GITHUB_ENV"
+          fi
+
+          echo "TOOLCHAIN_DIR=$TOOLCHAIN_DIR" >> "$GITHUB_ENV"
+          echo "SDK_HOME=$SDK_HOME" >> "$GITHUB_ENV"
+          echo "Toolchain: $TOOLCHAIN_DIR"
+          ls "$TOOLCHAIN_DIR/bin/" | head -20
+
+      - name: Resolve target mapping
+        run: |
+          source build_scripts/target-map.sh
+          resolve_target "${{ matrix.platform }}"
+          echo "TARGET_HOST=$TARGET_HOST" >> "$GITHUB_ENV"
+          echo "OPENSSL_TARGET=$OPENSSL_TARGET" >> "$GITHUB_ENV"
+          echo "EXTRA_CFLAGS=$EXTRA_CFLAGS" >> "$GITHUB_ENV"
+          echo "UPX_SKIP=$UPX_SKIP" >> "$GITHUB_ENV"
+          echo "Resolved: HOST=$TARGET_HOST SSL=$OPENSSL_TARGET UPX_SKIP=$UPX_SKIP"
+
+      - name: Build static dependencies
+        run: |
+          export PREFIX=/work/static-prefix
+          export BUILDDIR=/work/build
+          export TARGET_HOST OPENSSL_TARGET EXTRA_CFLAGS
+          mkdir -p "$PREFIX" "$BUILDDIR"
+          bash build_scripts/build_deps_static.sh
+
+      - name: Build aria2
+        run: |
+          export PREFIX=/work/static-prefix
+          export TARGET_HOST OPENSSL_TARGET EXTRA_CFLAGS
+          bash build_scripts/build_static_aria2.sh
+
+      - name: Verify binary
+        run: |
+          export TARGET_HOST
+          bash build_scripts/verify_binary.sh aria2-builder/src/aria2c | tee /tmp/verify.log
+          # Extract FULLY_STATIC status
+          FULLY_STATIC=$(grep 'FULLY_STATIC=' /tmp/verify.log | tail -1 | cut -d= -f2)
+          echo "FULLY_STATIC=${FULLY_STATIC:-unknown}" >> "$GITHUB_ENV"
+
+      - name: Compress with UPX
+        id: upx
+        run: |
+          export UPX_SKIP
+          OUTPUT=$(bash build_scripts/pack_with_upx.sh aria2-builder/src/aria2c)
+          UPX_APPLIED=$(echo "$OUTPUT" | grep 'UPX_APPLIED=' | cut -d= -f2)
+          echo "UPX_APPLIED=${UPX_APPLIED:-no}" >> "$GITHUB_ENV"
+          echo "upx_applied=${UPX_APPLIED:-no}" >> "$GITHUB_OUTPUT"
+
+      - name: Collect artifacts
+        run: |
+          export PREFIX=/work/static-prefix
+          export OPENWRT_SDK_VERSION FULLY_STATIC UPX_APPLIED
+          export BUILD_VERSION="${GITHUB_SHA:0:8}"
+          bash build_scripts/collect_artifacts.sh \
+            "${{ matrix.platform }}" \
+            aria2-builder/src/aria2c \
+            /work/artifacts/${{ matrix.platform }}
+
+      - name: Build .ipk package
+        run: |
+          bash build_scripts/build_ipk.sh \
+            "${{ matrix.platform }}" \
+            aria2-builder/src/aria2c \
+            /work/artifacts/${{ matrix.platform }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aria2-static-${{ matrix.platform }}
+          path: /work/artifacts/${{ matrix.platform }}/
+          retention-days: 30
