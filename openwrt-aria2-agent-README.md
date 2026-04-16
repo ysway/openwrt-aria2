@@ -2,192 +2,155 @@
 
 ## Purpose
 
-This document is a verified implementation brief for building an `openwrt-aria2` project that:
+This document is a verified implementation brief for the `openwrt-aria2` project that:
 
 - tracks `AnInsomniacy/aria2-builder` as an upstream **git submodule**,
 - uses its **Linux static-build flow** as the reference sample,
-- rebuilds `aria2c` for **multiple OpenWrt targets** inside OpenWrt SDK containers,
+- rebuilds `aria2c` for **multiple OpenWrt targets** using the `docker run` pattern with OpenWrt SDK containers (NOT the `container:` directive),
 - links third-party libraries **statically**,
 - uses **OpenSSL** rather than GnuTLS,
 - compresses final binaries with **UPX** when safe,
-- publishes OpenWrt-ready artifacts and a feed.
-
-This README intentionally distinguishes between:
-
-1. things verified directly from upstream GitHub code / docs,
-2. engineering decisions derived from those sources,
-3. places where the implementation must be conservative because the sources do **not** prove a stronger claim.
+- publishes OpenWrt-ready artifacts, a GitHub Release, and a feed branch.
 
 ---
 
-## Verified facts from upstream sources
+## Architecture: Proven CI/CD Pattern
 
-### A. What `aria2-builder` actually does
+The CI/CD architecture is modeled after `GuNanOvO/openwrt-tailscale`, a proven working project.
 
-`AnInsomniacy/aria2-builder` states in its README that it provides cross-platform statically linked aria2 builds. For Linux, the published support table is only:
+### Critical Design Decision: `docker run` vs `container:`
+
+**DO NOT use the GitHub Actions `container:` directive** with OpenWrt SDK images. This approach fails because:
+
+1. The `container.image` field cannot use `env` context — GitHub Actions evaluates `container` before `env` is available at job level.
+2. Running `apt-get` inside the SDK container via the `container:` directive is fragile and slow.
+3. The `container:` approach limits available GitHub Actions contexts and causes expression evaluation issues.
+
+**Instead, use the `docker run` command** from an `ubuntu-latest` runner:
+
+```yaml
+# CORRECT: docker run from host runner
+runs-on: ubuntu-latest
+steps:
+  - name: Build in SDK Container
+    run: |
+      docker run --rm --user root \
+        -v "$(pwd)/repo:/work/repo:z" \
+        -v "$(pwd)/output:/work/output:z" \
+        -e PLATFORM=${{ matrix.platform }} \
+        ghcr.io/openwrt/sdk:${{ matrix.platform }}-V${{ env.OPENWRT_IPK_SDK }} \
+        bash /work/repo/build_scripts/build_in_sdk.sh "${{ matrix.platform }}"
+```
+
+This pattern is proven by `openwrt-tailscale` and avoids all context evaluation issues.
+
+### SDK Image Tag Format
+
+OpenWrt SDK Docker images use **uppercase `-V`** in tags:
+
+```
+ghcr.io/openwrt/sdk:<platform>-V<version>
+```
+
+Example: `ghcr.io/openwrt/sdk:x86_64-V24.10.4`
+
+**NOT lowercase `-v`** (this was a bug in the original implementation).
+
+### Workflow Trigger Chain
+
+```
+sync-upstream.yml (schedule/manual)
+  → detects new aria2-builder commit
+  → pushes submodule update
+  → triggers build via repository_dispatch
+
+build-aria2.yml (dispatch triggers)
+  → build job: matrix build across all targets via docker run
+  → deploy job: updates feed branch
+  → release job: creates GitHub Release
+```
+
+---
+
+## Verified Facts from Upstream Sources
+
+### A. What `aria2-builder` Actually Does
+
+`AnInsomniacy/aria2-builder` provides cross-platform statically linked aria2 builds. For Linux, published support:
 
 - `Linux x86_64` with `OpenSSL` and `Fully static`
 - `Linux ARM64` with `OpenSSL` and `Fully static`
 
-It does **not** claim OpenWrt target coverage. Its README also states that the full feature set includes Async DNS, BitTorrent, Metalink, XML-RPC, HTTPS, SFTP via libssh2, GZip, message digest, and Firefox3 cookie support. Build details list zlib, expat, c-ares, SQLite, libssh2, and OpenSSL for Linux. This means it is a useful static-build reference, but not a direct OpenWrt artifact source.
+It does **not** claim OpenWrt target coverage. It is a useful static-build reference, but not a direct OpenWrt artifact source.
 
-### B. What the Linux workflow in `aria2-builder` actually shows
+### B. Linux Build Pattern from `aria2-builder`
 
-The GitHub Actions workflow `release.yml` for `aria2-builder` verifies the following Linux build pattern:
+The build pattern is:
 
-1. Build dependencies from source as static libraries.
-2. Build OpenSSL with:
-   - `./Configure linux-x86_64 no-shared no-module no-tests ...` for Linux x86_64
-   - `./Configure linux-aarch64 no-shared no-module no-tests ...` for Linux ARM64
+1. Build dependencies from source as static libraries (zlib, expat, c-ares, SQLite, OpenSSL, libssh2).
+2. Build OpenSSL with `./Configure <target> no-shared no-module no-tests`.
 3. Build `libssh2` with `--with-crypto=openssl --with-libssl-prefix=$PREFIX`.
-4. Build `aria2` with:
-   - `--without-gnutls --with-openssl`
-   - `--without-libxml2 --with-libexpat`
-   - `--with-libcares --with-libz --with-sqlite3 --with-libssh2`
-   - `ARIA2_STATIC=yes`
-   - `LDFLAGS="-L$PREFIX/lib -static-libgcc -static-libstdc++"`
-5. Strip the resulting `src/aria2c`.
-6. Run `ldd src/aria2c || true` as a linkage check.
+4. Build `aria2` with `--without-gnutls --with-openssl`, `ARIA2_STATIC=yes`, `-static -static-libgcc -static-libstdc++`.
+5. Strip the resulting binary.
 
-Important: the workflow proves that `aria2-builder` is doing a static-oriented build, but it does **not** prove that every OpenWrt target can be built the same way unchanged.
+### C. What `openwrt-tailscale` Proves
 
-### C. What `openwrt-tailscale` actually does
+The `openwrt-tailscale` project validates the following reusable pattern:
 
-`GuNanOvO/openwrt-tailscale` verifies a reusable OpenWrt automation pattern:
-
-1. Its build workflow uses a large OpenWrt target matrix including `aarch64_generic`, `arm_cortex-a7`, `arm_cortex-a9`, `i386_pentium4`, `loongarch64_generic`, `mips_24kc`, `mipsel_24kc`, `riscv64_generic`, and `x86_64`.
-2. It runs builds inside OpenWrt SDK Docker images such as:
-   - `ghcr.io/openwrt/sdk:${{ matrix.platform }}-V${{ env.OPENWRT_IPK_SDK }}`
-3. It mounts helper directories into the SDK container, including an `upx` directory.
-4. It downloads artifacts later in the release stage and pushes a `feed` branch.
-5. Its package Makefile uses UPX conditionally, and explicitly disables UPX for `mips64*`, `riscv64*`, and `loongarch64*` architectures.
-
-This proves the right OpenWrt-side pattern is “rebuild per target in SDK”, not “take a generic Linux binary and just rename it”.
-
-### D. What the OpenWrt official `aria2` package actually does
-
-The official `openwrt/packages` `net/aria2/Makefile` currently shows:
-
-- `PKG_VERSION:=1.37.0`
-- source pulled from official aria2 release tarballs
-- dynamic-style package dependencies such as `+zlib`, `+libstdcpp`, `+libopenssl`, `+libssh2`, `+libcares`, `+libsqlite3`, etc.
-
-That package design is **not** the design needed here. It is useful as a packaging reference, but it is not a static self-contained binary recipe.
-
-### E. What Git and GitHub officially support for submodules
-
-Git documents that:
-
-- `.gitmodules` can specify `submodule.<name>.branch` for upstream tracking,
-- `git submodule update --remote` updates to the submodule's remote-tracking branch,
-- `update --remote` fetches before calculating the target SHA unless `--no-fetch` is given.
-
-`actions/checkout` documents a `submodules` input where:
-
-- `true` checks out submodules,
-- `recursive` recursively checks out submodules.
-
-Therefore the project can safely support both:
-
-- reproducible builds from a pinned submodule gitlink,
-- a separate scheduled workflow that updates the submodule pointer to newer upstream commits.
-
-### F. What is actually supported by UPX
-
-UPX documents itself as a portable executable packer for multiple executable formats. This supports using UPX as a post-build optimization step. However, the `openwrt-tailscale` project is a useful cautionary example because it disables UPX for some architectures. Therefore UPX should be treated as:
-
-- desired,
-- tested,
-- but skippable on incompatible targets.
-
-### G. OpenSSL and TLS 1.3
-
-OpenSSL's own TLS 1.3 article states that OpenSSL 1.1.1 would include TLS 1.3 support, and that TLS 1.3 is enabled by default in development versions discussed there unless explicitly disabled. This validates the high-level requirement that choosing OpenSSL is the right path when TLS 1.3 support is required.
+1. **`docker run` from `ubuntu-latest`** — NOT the `container:` directive.
+2. **Volume mounts** to pass scripts, sources, and outputs between host and SDK container.
+3. **SDK image format**: `ghcr.io/openwrt/sdk:<platform>-V<version>` (capital V).
+4. **Version checking workflow**: scheduled checks for upstream updates, triggers build via `repository_dispatch`.
+5. **Single consolidated workflow**: build → deploy feed → create release, all in one workflow file.
+6. **UPX conditional**: disabled for `mips64*`, `riscv64*`, `loongarch64*` architectures.
+7. **`--user root`** when needed for installing packages inside the container.
+8. **`:z` SELinux suffix** on volume mounts for container compatibility.
 
 ---
 
-## Corrections to earlier assumptions
+## Corrections to Earlier Assumptions
 
-The following statements are **too strong** and should not be implemented as written:
+### 1. "All OpenWrt targets will be fully static."
+Not proven. Treat static linking as the goal, verify per target, fail or mark unsupported when a target cannot satisfy the requirement.
 
-### 1. “All OpenWrt targets will be fully static.”
-Not proven.
+### 2. "The exact Linux workflow can be copied unchanged into OpenWrt SDK."
+Not proven. Reuse the dependency set and feature choices, but adapt compiler, target triple, sysroot, and OpenSSL Configure target per OpenWrt platform.
 
-What is proven:
-- `aria2-builder` achieves fully static Linux x86_64 / ARM64 outputs.
-- OpenWrt SDK builds can be matrix-driven per target.
+### 3. "UPX should always run."
+Not safe. Maintain a skip list for known-bad architectures (`mips64*`, `mips64el*`, `riscv64*`, `loongarch64*`).
 
-What is **not** proven:
-- that every OpenWrt SDK / libc / toolchain combination will permit a fully static `aria2c` with no target-specific fixes.
+### 4. "Use `container:` directive for SDK builds."
+**Incorrect and the root cause of workflow failures.** Use `docker run` from the host runner instead.
 
-Implementation rule:
-- treat static linking as the goal,
-- verify it per target,
-- fail or mark unsupported when a target cannot satisfy the static requirement.
-
-### 2. “The exact Linux workflow can be copied unchanged into OpenWrt SDK.”
-Not proven.
-
-What is proven:
-- the dependency set and configure flags are a good Linux sample,
-- OpenWrt SDK is the right place to cross-build per target.
-
-Implementation rule:
-- reuse the dependency set and feature choices,
-- but adapt compiler, target triple, sysroot, and OpenSSL Configure target per OpenWrt platform.
-
-### 3. “UPX should always run.”
-Not safe.
-
-What is proven:
-- UPX is generally valid,
-- `openwrt-tailscale` disables it on some architectures.
-
-Implementation rule:
-- run UPX only after the binary is built,
-- test the packed file,
-- fall back to the uncompressed binary on failure,
-- optionally keep a per-target skip list.
-
-### 4. “Use `aria2-builder` release binaries as upstream OpenWrt inputs.”
-Incorrect.
-
-The verified upstream only provides generic Linux x86_64 and ARM64 static outputs, not OpenWrt target artifacts. The correct use of the project is:
-
-- submodule reference,
-- source tree reference,
-- Linux build recipe reference,
-- not direct OpenWrt binary redistribution.
+### 5. "SDK tags use lowercase `-v`."
+**Incorrect.** SDK tags use uppercase `-V` (e.g., `-V24.10.4`).
 
 ---
 
-## Required project architecture
-
-## 1. Repository layout
-
-Recommended repository layout:
+## Repository Layout
 
 ```text
 openwrt-aria2/
 ├── .gitmodules
 ├── .github/
 │   └── workflows/
-│       ├── sync-upstream.yml
-│       ├── build-aria2.yml
-│       └── release-feed.yml
-├── aria2-builder/                  # git submodule
+│       ├── sync-upstream.yml      # Daily upstream check + trigger build
+│       ├── build-aria2.yml        # Build + Deploy Feed + Release (consolidated)
+│       └── release-feed.yml       # DEPRECATED (kept for reference)
+├── aria2-builder/                  # git submodule → AnInsomniacy/aria2-builder
 ├── build_scripts/
-│   ├── common.sh
-│   ├── versions.sh
-│   ├── target-map.sh
-│   ├── build_deps_static.sh
-│   ├── build_static_aria2.sh
-│   ├── verify_binary.sh
-│   ├── pack_with_upx.sh
-│   ├── build_ipk.sh
-│   ├── build_apk.sh
-│   ├── collect_artifacts.sh
-│   └── gen_feed.sh
+│   ├── common.sh                  # Shared helpers
+│   ├── versions.sh                # Dependency version pins
+│   ├── target-map.sh              # Platform → compiler triple mapping
+│   ├── build_in_sdk.sh            # SDK container entrypoint (NEW)
+│   ├── build_deps_static.sh       # Build all static dependencies
+│   ├── build_static_aria2.sh      # Build aria2 binary
+│   ├── verify_binary.sh           # Linkage + functional verification
+│   ├── pack_with_upx.sh           # UPX compression
+│   ├── build_ipk.sh               # .ipk package assembly
+│   ├── build_apk.sh               # .apk package assembly (OpenWrt 25.12+)
+│   ├── collect_artifacts.sh        # Artifact + BUILDINFO collection
+│   └── gen_feed.sh                # Feed index generation
 ├── package/
 │   └── aria2-static/
 │       ├── Makefile
@@ -200,174 +163,142 @@ openwrt-aria2/
 └── README.md
 ```
 
-## 2. Design rules
+## Design Rules
 
 1. `aria2-builder` is a **submodule and source reference**, not the direct OpenWrt binary source.
-2. Final OpenWrt binaries must be rebuilt inside the matching OpenWrt SDK.
+2. Final OpenWrt binaries are rebuilt inside the matching OpenWrt SDK via `docker run`.
 3. Use OpenSSL only; do not implement GnuTLS fallback.
-4. Third-party libraries must be built as static libraries and linked into `aria2c`.
-5. UPX is a post-build optimization and must not be a hard requirement on unsupported targets.
-6. Each target must be independently verified for linkage and runtime sanity.
+4. Third-party libraries are built as static libraries and linked into `aria2c`.
+5. UPX is a post-build optimization; skipped on incompatible targets.
+6. Each target is independently verified for linkage and runtime sanity.
 
 ---
 
-## Submodule policy
+## Workflow Details
 
-## 1. Add the submodule
+### `sync-upstream.yml`
 
-Use `aria2-builder` as a standard git submodule.
+**Trigger:** Daily schedule (06:00 UTC) + manual dispatch.
 
-Suggested `.gitmodules` entry:
+**Flow:**
+1. Checkout repo with submodules.
+2. `git submodule update --remote -- aria2-builder`.
+3. Compare old vs new SHA.
+4. If changed: commit + push the updated gitlink.
+5. Trigger `build-aria2.yml` via `repository_dispatch` event (`build-aria2` type).
 
-```ini
-[submodule "aria2-builder"]
-	path = aria2-builder
-	url = https://github.com/AnInsomniacy/aria2-builder.git
-	branch = master
-```
+### `build-aria2.yml`
 
-## 2. Build policy
+**Trigger:** `workflow_dispatch` + `repository_dispatch[build-aria2]`.
 
-Normal builds must use the committed submodule SHA pinned in the superproject.
+**Env vars:**
+- `OPENWRT_IPK_SDK: "24.10.4"` — SDK version for most platforms (IPK builds).
+- `OPENWRT_APK_SDK: "25.12.0"` — SDK version for APK builds and 25.12-only platforms.
+- `ONLY_25` — Space-separated platforms that only exist in 25.12 SDK (e.g., `riscv64_generic`).
+- `SKIP_25` — Space-separated platforms removed in 25.12 SDK (e.g., `mips_4kec riscv64_riscv64`).
 
-This gives reproducible outputs.
+**Jobs:**
+1. **`build`** — Matrix build across 33 OpenWrt targets:
+   - Checkout repo with submodules into `repo/`.
+   - Determine SDK version (24.10 default, 25.12 for `ONLY_25` platforms).
+   - Pull SDK Docker image: `ghcr.io/openwrt/sdk:<platform>-V<version>`.
+   - `docker run --rm --user root` with volume mounts.
+   - Entrypoint: `build_in_sdk.sh <platform>` — produces `.ipk` + `.apk` per target.
+   - Upload artifacts per target.
 
-## 3. Upstream sync policy
+2. **`deploy`** — Feed branch update (needs: build):
+   - Download all artifacts.
+   - Generate per-platform Packages index.
+   - Force-push to `feed` branch.
 
-A separate scheduled workflow should:
+3. **`release`** — GitHub Release (needs: build):
+   - Download all artifacts.
+   - Rename IPKs and APKs with platform suffix.
+   - Generate release notes markdown table (IPK + APK columns).
+   - Publish release via `softprops/action-gh-release`.
 
-1. checkout repo with submodules,
-2. run `git submodule update --remote -- aria2-builder`,
-3. detect whether the gitlink changed,
-4. commit the updated gitlink if changed,
-5. trigger the real build pipeline.
+### `build_in_sdk.sh` — Container Entrypoint
 
-This matches Git's documented submodule update model.
-
----
-
-## Build model
-
-## 1. Build per OpenWrt target in SDK containers
-
-Use the `openwrt-tailscale` pattern:
-
-- matrix over OpenWrt targets,
-- run SDK Docker image for each target,
-- mount scripts and sources into the container,
-- build target-specific packages and release artifacts.
-
-Suggested first-wave targets:
-
-- `x86_64`
-- `aarch64_generic`
-- `arm_cortex-a7`
-- `arm_cortex-a9`
-- `i386_pentium4`
-- `mips_24kc`
-- `mipsel_24kc`
-- `riscv64_generic`
-- `loongarch64_generic`
-
-Do not assume every target succeeds on day one.
-
-## 2. Dependency set
-
-Use the Linux sample's dependency set as the required baseline:
-
-- zlib
-- expat
-- c-ares
-- SQLite
-- OpenSSL
-- libssh2
-
-Reasons:
-- they are explicitly present in `aria2-builder` build details,
-- they line up with the feature set claimed by that project,
-- they correspond to the relevant feature toggles in the OpenWrt package.
-
-## 3. Why not reuse OpenWrt's dynamic package recipe as-is
-
-Because the official OpenWrt `aria2` package is dependency-driven and dynamic-library oriented.
-
-This project's value proposition is the opposite:
-
-- keep runtime dependencies minimal,
-- reduce reliance on old firmware package sets,
-- package a mostly self-contained `aria2c`.
+Runs inside the SDK container. Steps:
+1. `apt-get install` build tools (autoconf, automake, libtool, curl, upx-ucl, etc.).
+2. Discover SDK toolchain at `/builder/staging_dir/toolchain-*/bin/`.
+3. Source `target-map.sh`, resolve target triple + OpenSSL target via wildcard patterns.
+4. Auto-detect `TARGET_HOST` from SDK toolchain GCC binary (overrides mapped default if different).
+5. Run `build_deps_static.sh` — build all static dependencies.
+6. Run `build_static_aria2.sh` — configure + make aria2.
+7. Run `verify_binary.sh` — linkage + functional checks.
+8. Run `pack_with_upx.sh` — conditional UPX compression.
+9. Run `collect_artifacts.sh` — BUILDINFO generation.
+10. Run `build_ipk.sh` — .ipk package assembly.
+11. Run `build_apk.sh` — .apk package assembly (OpenWrt 25.12+ APK v2 format).
+12. Output written to `/work/output/<platform>/`.
 
 ---
 
-## Static dependency build requirements
+## Target Matrix (33 platforms)
 
-Within each SDK container, implement a build prefix such as:
+`target-map.sh` uses **wildcard patterns** (`aarch64_*`, `arm_*`, etc.) to map any platform variant to the correct compiler triple and OpenSSL target. An `auto_detect_target_host()` function reads the actual GCC binary from the SDK toolchain and overrides the mapped triple if it differs.
 
-```text
-/work/static-prefix
-```
+| Pattern | Compiler Triple | OpenSSL Target | UPX | Example Platforms |
+|---|---|---|---|---|
+| `x86_64` | `x86_64-openwrt-linux-musl` | `linux-x86_64` | Yes | `x86_64` |
+| `aarch64_*` | `aarch64-openwrt-linux-musl` | `linux-aarch64` | Yes | `aarch64_generic`, `aarch64_cortex-a53`, `aarch64_cortex-a72`, `aarch64_cortex-a76` |
+| `arm_*` | `arm-openwrt-linux-muslgnueabi` | `linux-armv4` | Yes | `arm_cortex-a7`, `arm_cortex-a9`, `arm_cortex-a15_neon-vfpv4`, `arm_xscale`, etc. |
+| `i386_*` | `i486-openwrt-linux-musl` | `linux-elf` | Yes | `i386_pentium4`, `i386_pentium-mmx` |
+| `mips_*` | `mips-openwrt-linux-musl` | `linux-mips32` | Yes | `mips_24kc`, `mips_4kec`, `mips_mips32` |
+| `mipsel_*` | `mipsel-openwrt-linux-musl` | `linux-mips32` | Yes | `mipsel_24kc`, `mipsel_74kc`, `mipsel_mips32`, `mipsel_24kc_24kf` |
+| `mips64_*` | `mips64-openwrt-linux-musl` | `linux64-mips64` | **Skip** | `mips64_mips64r2`, `mips64_octeonplus` |
+| `mips64el_*` | `mips64el-openwrt-linux-musl` | `linux64-mips64` | **Skip** | `mips64el_mips64r2` |
+| `riscv64_*` | `riscv64-openwrt-linux-musl` | `linux64-riscv64` | **Skip** | `riscv64_riscv64`, `riscv64_generic` |
+| `loongarch64_*` | `loongarch64-openwrt-linux-musl` | `linux64-loongarch64` | **Skip** | `loongarch64_generic` |
 
-Install all static third-party outputs there.
-
-### Build rules for dependencies
-
-#### zlib
-
-Build static only.
-
-#### expat
-
-Build with:
-
-```sh
---disable-shared --enable-static
-```
-
-#### c-ares
-
-Build with:
-
-```sh
---disable-shared --enable-static
-```
-
-#### SQLite
-
-Build with static output enabled and shared output disabled when possible.
-
-#### OpenSSL
-
-Use the Linux sample as the reference:
-
-```sh
-./Configure <openssl-target> no-shared no-module no-tests \
-  --prefix="$PREFIX" --libdir=lib
-```
-
-Do **not** rely on the OpenWrt system OpenSSL package.
-
-#### libssh2
-
-Must be built against the static OpenSSL just built:
-
-```sh
-./configure --disable-shared --enable-static --prefix="$PREFIX" \
-  --with-crypto=openssl --with-libssl-prefix="$PREFIX"
-```
+**SDK version routing:**
+- Most platforms use **24.10.4** SDK.
+- `ONLY_25` platforms (e.g., `riscv64_generic`) use **25.12.0** SDK.
+- `SKIP_25` platforms (e.g., `mips_4kec`, `riscv64_riscv64`) are only in 24.10.
 
 ---
 
-## aria2 configure requirements
+## GitHub Actions Setup Requirements
 
-Use the Linux sample flags as baseline, adapted for cross-compilation.
+1. **Enable Actions** in repository settings.
+2. **Workflow permissions**: Settings → Actions → General → set to "Read and write permissions".
+3. **GitHub Pages** (optional): Enable for the `feed` branch to serve the package feed.
+4. **Update repo-specific values**: `REPO_OWNER` and `REPO_NAME` in `build-aria2.yml` env section, and URLs in `feed_template/index.html`.
 
-Required feature choices:
+---
+
+## Dependency Versions
+
+Managed in `build_scripts/versions.sh`:
+
+| Library | Version |
+|---|---|
+| zlib | 1.3.1 |
+| expat | 2.5.0 |
+| SQLite | 3430100 |
+| c-ares | 1.19.1 |
+| libssh2 | 1.11.0 |
+| OpenSSL | 3.4.4 |
+
+---
+
+## Static Dependency Build Details
+
+Within each SDK container, build prefix: `/work/static-prefix`.
+
+- **zlib**: `--static`
+- **expat**: `--disable-shared --enable-static`
+- **c-ares**: `--disable-shared --enable-static`
+- **SQLite**: `--disable-shared --enable-static`
+- **OpenSSL**: `./Configure <target> no-shared no-module no-tests --prefix=$PREFIX --libdir=lib`
+- **libssh2**: `--disable-shared --enable-static --with-crypto=openssl --with-libssl-prefix=$PREFIX`
+
+### aria2 Configure
 
 ```sh
 ./configure \
-  --host="$TARGET_HOST" \
-  --prefix=/usr \
-  --disable-nls \
+  --host="$TARGET_HOST" --prefix=/usr --disable-nls \
   --without-gnutls --with-openssl \
   --without-libxml2 --with-libexpat \
   --with-libcares --with-libz --with-sqlite3 --with-libssh2 \
@@ -377,266 +308,24 @@ Required feature choices:
   PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 ```
 
-Notes:
+---
 
-1. `--without-gnutls --with-openssl` is required.
-2. `--with-libssh2`, `--with-libcares`, `--with-sqlite3`, `--with-libexpat`, and `--with-libz` are required.
-3. Explicit `-static` is recommended here even though the upstream Linux sample only clearly shows `-static-libgcc -static-libstdc++`; the project goal is stronger than the upstream example and must be verified per target.
-4. `autoreconf -i` must run before configure, matching the Linux sample.
+## UPX Policy
+
+- Maintain a skip list: `mips64*`, `mips64el*`, `riscv64*`, `loongarch64*`.
+- Always: build → strip → backup → UPX compress → integrity test → verify.
+- On any failure: restore uncompressed binary.
 
 ---
 
-## Target mapping requirements
-
-A target mapping layer is required.
-
-OpenSSL Configure target names are not the same thing as OpenWrt matrix names. Implement a table in `target-map.sh` that maps OpenWrt platform IDs to:
-
-- compiler triple,
-- target CPU flags,
-- OpenSSL Configure target.
-
-Initial examples:
-
-```text
-x86_64              -> openssl target linux-x86_64
- aarch64_generic     -> openssl target linux-aarch64
- i386_pentium4       -> openssl target linux-elf
- arm_cortex-a7       -> openssl target linux-armv4   + target-specific CFLAGS
- arm_cortex-a9       -> openssl target linux-armv4   + target-specific CFLAGS
- mips_24kc           -> openssl target linux-mips32
- mipsel_24kc         -> openssl target linux-mips32
- riscv64_generic     -> openssl target linux64-riscv64
- loongarch64_generic -> openssl target linux64-loongarch64
-```
-
-This mapping must be testable and overrideable per target.
-
----
-
-## Packaging requirements
-
-## 1. Package name
-
-Use a distinct package name such as:
-
-- `aria2-static`
-
-The binary installed should remain:
-
-- `/usr/bin/aria2c`
-
-## 2. Package contents
-
-Recommended package contents:
-
-```text
-/usr/bin/aria2c
-/etc/init.d/aria2
-/etc/config/aria2
-/usr/share/doc/aria2-static/BUILDINFO
-```
-
-## 3. BUILDINFO requirements
-
-Generate a `BUILDINFO` text file per target containing at least:
-
-- project build version
-- OpenWrt target name
-- SDK version
-- submodule commit
-- aria2 version
-- OpenSSL version
-- zlib version
-- expat version
-- c-ares version
-- SQLite version
-- libssh2 version
-- whether UPX was applied
-- whether the binary verified as fully static
-
-## 4. Runtime dependencies
-
-Do not intentionally depend on OpenWrt's `libopenssl`, `libssh2`, `libcares`, or `libsqlite3`.
-
-Keep dependencies as small as reality allows after verification.
-
----
-
-## UPX policy
-
-UPX is required as a preferred optimization, but not as an unconditional packaging rule.
-
-## Required flow
-
-1. build `aria2c`
-2. strip it
-3. save a backup copy
-4. run UPX
-5. run UPX integrity test
-6. run `aria2c --version`
-7. if packed binary fails, restore original binary
-
-Recommended policy:
-
-- maintain a skip list for known-bad architectures,
-- seed the initial skip list from the `openwrt-tailscale` example:
-  - `mips64*`
-  - `riscv64*`
-  - `loongarch64*`
-- extend the skip list only based on observed failures.
-
-UPX should never silently replace a working binary with an unverified packed one.
-
----
-
-## Verification requirements
-
-Every build must perform all of the following.
-
-## 1. Linkage verification
-
-Run checks such as:
-
-```sh
-file src/aria2c
-readelf -d src/aria2c || true
-objdump -p src/aria2c | grep NEEDED || true
-ldd src/aria2c || true
-```
-
-Acceptance rule:
-
-- ideal result: no dynamic `NEEDED` entries,
-- minimum acceptable result: no dependency on the third-party libraries intended to be embedded statically.
-
-If the target does not meet the static requirement, mark the target unsupported or fail that matrix job.
-
-## 2. Functional verification
-
-Run at least:
-
-```sh
-./src/aria2c --version
-./src/aria2c --help >/dev/null
-```
-
-Preserve the `--version` output in logs and optionally in `BUILDINFO`.
-
-## 3. UPX verification
-
-Run:
-
-```sh
-upx -t ./src/aria2c
-./src/aria2c --version
-```
-
-If either fails, restore the uncompressed binary.
-
----
-
-## Workflow requirements
-
-## 1. `sync-upstream.yml`
-
-Purpose:
-- update the `aria2-builder` submodule pointer on a schedule or manual run.
-
-Required behavior:
-- checkout with submodules,
-- run `git submodule update --remote -- aria2-builder`,
-- commit changed gitlink,
-- trigger build workflow.
-
-## 2. `build-aria2.yml`
-
-Purpose:
-- matrix-build per OpenWrt target in SDK containers.
-
-Required behavior:
-- checkout repository and submodule,
-- use OpenWrt SDK Docker images per target,
-- build static dependencies,
-- build `aria2c`,
-- verify,
-- UPX if safe,
-- build `.ipk`,
-- optionally build `.apk`,
-- upload artifacts per target.
-
-## 3. `release-feed.yml`
-
-Purpose:
-- aggregate artifacts,
-- publish GitHub release,
-- update feed branch and index.
-
-Required behavior:
-- download all artifacts,
-- compute hashes,
-- build release markdown,
-- publish release,
-- update feed branch.
-
----
-
-## Implementation priorities
-
-### Phase 1
-
-Targets:
-- `x86_64`
-- `aarch64_generic`
-- `arm_cortex-a7`
-- `mipsel_24kc`
-
-Deliverables:
-- static `aria2c`
-- `.ipk`
-- BUILDINFO
-- UPX policy
-- release artifact upload
-
-### Phase 2
-
-Add:
-- `arm_cortex-a9`
-- `i386_pentium4`
-- `mips_24kc`
-- `riscv64_generic`
-
-### Phase 3
-
-Add:
-- `loongarch64_generic`
-- `apk`
-- feed branch automation
-- install script
-
----
-
-## Non-goals for v1
-
-Do not implement these in v1 unless needed later:
-
-- direct reuse of `aria2-builder` Linux binaries as OpenWrt deliverables,
-- GnuTLS support,
-- libxml2 support,
-- broad assumptions that every architecture can be UPX-packed or fully static,
-- packaging every possible LuCI integration before the binary pipeline is stable.
-
----
-
-## Final engineering position
+## Final Engineering Position
 
 The validated approach is:
 
-1. use `aria2-builder` as a **submodule and Linux static-build reference**,
-2. use `openwrt-tailscale` as the **OpenWrt SDK matrix / packaging / release / feed reference**,
-3. rebuild `aria2c` per OpenWrt target with static dependencies,
-4. verify static linkage per target,
-5. apply UPX only after testing,
-6. publish OpenWrt-specific artifacts.
-
-This is the strongest implementation path supported by the checked sources, without assuming capabilities those sources do not actually prove.
+1. Use `aria2-builder` as a **submodule and Linux static-build reference**.
+2. Use `openwrt-tailscale` as the **OpenWrt SDK `docker run` / packaging / release / feed reference**.
+3. **Never use `container:` directive** — always use `docker run` from `ubuntu-latest`.
+4. Rebuild `aria2c` per OpenWrt target with static dependencies inside the SDK container.
+5. Verify static linkage per target.
+6. Apply UPX only after testing, skip on incompatible architectures.
+7. Publish OpenWrt-specific artifacts via consolidated build→deploy→release workflow.

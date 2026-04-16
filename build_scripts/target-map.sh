@@ -14,6 +14,17 @@
 
 set -euo pipefail
 
+# Auto-detect TARGET_HOST from the SDK toolchain binaries.
+# Call after setting TOOLCHAIN_DIR on PATH.
+auto_detect_target_host() {
+    local toolchain_dir="${1:?toolchain dir required}"
+    local gcc_path
+    gcc_path=$(find "$toolchain_dir/bin" -maxdepth 1 -name '*-gcc' ! -name '*-wrapper' 2>/dev/null | head -1)
+    if [ -n "$gcc_path" ]; then
+        basename "$gcc_path" | sed 's/-gcc$//'
+    fi
+}
+
 resolve_target() {
     local platform="$1"
     TARGET_HOST=""
@@ -26,39 +37,42 @@ resolve_target() {
             TARGET_HOST="x86_64-openwrt-linux-musl"
             OPENSSL_TARGET="linux-x86_64"
             ;;
-        aarch64_generic)
+        aarch64_*)
             TARGET_HOST="aarch64-openwrt-linux-musl"
             OPENSSL_TARGET="linux-aarch64"
             ;;
-        arm_cortex-a7)
+        arm_*)
             TARGET_HOST="arm-openwrt-linux-muslgnueabi"
             OPENSSL_TARGET="linux-armv4"
-            EXTRA_CFLAGS="-march=armv7-a -mcpu=cortex-a7 -mfloat-abi=soft"
             ;;
-        arm_cortex-a9)
-            TARGET_HOST="arm-openwrt-linux-muslgnueabi"
-            OPENSSL_TARGET="linux-armv4"
-            EXTRA_CFLAGS="-march=armv7-a -mcpu=cortex-a9 -mfloat-abi=soft"
-            ;;
-        i386_pentium4)
+        i386_*)
             TARGET_HOST="i486-openwrt-linux-musl"
             OPENSSL_TARGET="linux-elf"
-            EXTRA_CFLAGS="-march=pentium4"
             ;;
-        mips_24kc)
-            TARGET_HOST="mips-openwrt-linux-musl"
-            OPENSSL_TARGET="linux-mips32"
+        mips64el_*)
+            TARGET_HOST="mips64el-openwrt-linux-musl"
+            OPENSSL_TARGET="linux64-mips64"
+            UPX_SKIP="yes"
             ;;
-        mipsel_24kc)
+        mips64_*)
+            TARGET_HOST="mips64-openwrt-linux-musl"
+            OPENSSL_TARGET="linux64-mips64"
+            UPX_SKIP="yes"
+            ;;
+        mipsel_*)
             TARGET_HOST="mipsel-openwrt-linux-musl"
             OPENSSL_TARGET="linux-mips32"
             ;;
-        riscv64_generic)
+        mips_*)
+            TARGET_HOST="mips-openwrt-linux-musl"
+            OPENSSL_TARGET="linux-mips32"
+            ;;
+        riscv64_*)
             TARGET_HOST="riscv64-openwrt-linux-musl"
             OPENSSL_TARGET="linux64-riscv64"
             UPX_SKIP="yes"
             ;;
-        loongarch64_generic)
+        loongarch64_*)
             TARGET_HOST="loongarch64-openwrt-linux-musl"
             OPENSSL_TARGET="linux64-loongarch64"
             UPX_SKIP="yes"
