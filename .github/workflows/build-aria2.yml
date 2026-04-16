@@ -18,13 +18,12 @@ on:
 permissions:
   contents: read
 
-env:
-  OPENWRT_SDK_VERSION: ${{ inputs.sdk_version || '24.10.0' }}
-
 jobs:
   build:
     name: Build ${{ matrix.platform }}
     runs-on: ubuntu-latest
+    env:
+      OPENWRT_SDK_VERSION: ${{ inputs.sdk_version || '24.10.0' }}
     strategy:
       fail-fast: false
       matrix:
@@ -52,7 +51,7 @@ jobs:
             sdk_platform: loongarch64_generic
 
     container:
-      image: ghcr.io/openwrt/sdk:${{ matrix.sdk_platform }}-v${{ env.OPENWRT_SDK_VERSION }}
+      image: ghcr.io/openwrt/sdk:${{ matrix.sdk_platform }}-v${{ inputs.sdk_version || '24.10.0' }}
       options: --user root
 
     steps:
