@@ -35,6 +35,7 @@ autoreconf -i
     CFLAGS="-O2 ${EXTRA_CFLAGS:-}" \
     CPPFLAGS="-I$PREFIX/include" \
     LDFLAGS="-L$PREFIX/lib -static -static-libgcc -static-libstdc++" \
+    LIBS="-lgcc_eh" \
     PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 
 make -j"$NPROC"

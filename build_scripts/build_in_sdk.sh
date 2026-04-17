@@ -38,6 +38,7 @@ if [ -z "$TOOLCHAIN_DIR" ]; then
     log_fatal "Could not find SDK toolchain directory in $SDK_HOME/staging_dir/"
 fi
 export PATH="$TOOLCHAIN_DIR/bin:$PATH"
+export STAGING_DIR="$SDK_HOME/staging_dir"
 log_info "Toolchain: $TOOLCHAIN_DIR"
 
 # ── Resolve target mapping ─────────────────────────────────────────────────
