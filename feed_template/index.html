@@ -17,16 +17,19 @@
   <p>This feed provides <strong>aria2-static</strong> packages for OpenWrt.</p>
 
   <h2>Usage</h2>
-  <p>Add this feed to your OpenWrt device:</p>
-  <pre><code># Add to /etc/opkg/customfeeds.conf:
-src/gz aria2-static https://ysway.github.io/openwrt-aria2
+  <p>This site root is a landing page. The actual <code>opkg</code> feed is platform-specific.</p>
+  <pre><code># Example: x86_64
+src/gz aria2-static https://ysway.github.io/openwrt-aria2/x86_64
+
+# Example: aarch64_cortex-a53
+src/gz aria2-static https://ysway.github.io/openwrt-aria2/aarch64_cortex-a53
 
 # Then install:
 opkg update
 opkg install aria2-static</code></pre>
 
   <h2>Available Packages</h2>
-  <p>See the <a href="Packages">Packages</a> index for available architectures.</p>
+  <p>Browse the platform directories in the <code>feed</code> branch for available architectures and their <code>Packages.gz</code> indexes.</p>
 
   <h2>Source</h2>
   <p><a href="https://github.com/ysway/openwrt-aria2">GitHub Repository</a></p>

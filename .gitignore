@@ -1,7 +1,19 @@
 # Build artifacts
 /work/
+/output/
 *.ipk
 *.apk
+
+# Autotools generated files (from Docker container builds leaking into host)
+/ltmain.sh
+/config.guess
+/config.sub
+/compile
+/install-sh
+/missing
+/depcomp
+/aclocal.m4
+/autom4te.cache/
 
 # Editor files
 *.swp

@@ -135,8 +135,7 @@ openwrt-aria2/
 ├── .github/
 │   └── workflows/
 │       ├── sync-upstream.yml      # Daily upstream check + trigger build
-│       ├── build-aria2.yml        # Build + Deploy Feed + Release (consolidated)
-│       └── release-feed.yml       # DEPRECATED (kept for reference)
+│       └── build-aria2.yml        # Build + Deploy Feed + Release (consolidated)
 ├── aria2-builder/                  # git submodule → AnInsomniacy/aria2-builder
 ├── build_scripts/
 │   ├── common.sh                  # Shared helpers
@@ -222,16 +221,17 @@ openwrt-aria2/
 Runs inside the SDK container. Steps:
 1. `apt-get install` build tools (autoconf, automake, libtool, curl, upx-ucl, etc.).
 2. Discover SDK toolchain at `/builder/staging_dir/toolchain-*/bin/`.
-3. Source `target-map.sh`, resolve target triple + OpenSSL target via wildcard patterns.
-4. Auto-detect `TARGET_HOST` from SDK toolchain GCC binary (overrides mapped default if different).
-5. Run `build_deps_static.sh` — build all static dependencies.
-6. Run `build_static_aria2.sh` — configure + make aria2.
-7. Run `verify_binary.sh` — linkage + functional checks.
-8. Run `pack_with_upx.sh` — conditional UPX compression.
-9. Run `collect_artifacts.sh` — BUILDINFO generation.
-10. Run `build_ipk.sh` — .ipk package assembly.
-11. Run `build_apk.sh` — .apk package assembly (OpenWrt 25.12+ APK v2 format).
-12. Output written to `/work/output/<platform>/`.
+3. Set `STAGING_DIR` environment variable (required by OpenWrt toolchain binaries).
+4. Source `target-map.sh`, resolve target triple + OpenSSL target via wildcard patterns.
+5. Auto-detect `TARGET_HOST` from SDK toolchain GCC binary (overrides mapped default if different).
+6. Run `build_deps_static.sh` — build all static dependencies.
+7. Run `build_static_aria2.sh` — configure + make aria2.
+8. Run `verify_binary.sh` — linkage + functional checks.
+9. Run `pack_with_upx.sh` — conditional UPX compression.
+10. Run `collect_artifacts.sh` — BUILDINFO generation.
+11. Run `build_ipk.sh` — .ipk package assembly.
+12. Run `build_apk.sh` — .apk package assembly (OpenWrt 25.12+ APK v2 format).
+13. Output written to `/work/output/<platform>/`.
 
 ---
 
@@ -305,6 +305,7 @@ Within each SDK container, build prefix: `/work/static-prefix`.
   ARIA2_STATIC=yes \
   CPPFLAGS="-I$PREFIX/include" \
   LDFLAGS="-L$PREFIX/lib -static -static-libgcc -static-libstdc++" \
+  LIBS="-lgcc_eh" \
   PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 ```
 
