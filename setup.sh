@@ -2,14 +2,14 @@
 # Quick installer for aria2-static on OpenWrt
 #
 # Usage:
-#   wget -O- https://raw.githubusercontent.com/OWNER/openwrt-aria2/master/install.sh | sh
+#   wget -O- https://raw.githubusercontent.com/ysway/openwrt-aria2/master/setup.sh | sh
 #
 # Or download and run:
-#   sh install.sh
+#   sh setup.sh
 
 set -e
 
-REPO="OWNER/openwrt-aria2"
+REPO="ysway/openwrt-aria2"
 FEED_URL="https://github.com/${REPO}/releases/latest/download"
 
 # Detect architecture

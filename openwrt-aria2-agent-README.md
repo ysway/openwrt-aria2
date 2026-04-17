@@ -159,7 +159,7 @@ openwrt-aria2/
 │           └── aria2.conf
 ├── feed_template/
 │   └── index.html
-├── install.sh
+├── setup.sh
 └── README.md
 ```
 

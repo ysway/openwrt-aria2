@@ -40,7 +40,7 @@ opkg install aria2-static_*_<arch>.ipk
 Add to `/etc/opkg/customfeeds.conf`:
 
 ```
-src/gz aria2-static https://<owner>.github.io/openwrt-aria2
+src/gz aria2-static https://<ysway>.github.io/openwrt-aria2
 ```
 
 Then:
@@ -53,7 +53,7 @@ opkg install aria2-static
 ### Direct binary
 
 ```sh
-wget -O /usr/bin/aria2c https://github.com/<owner>/openwrt-aria2/releases/latest/download/aria2c-<arch>
+wget -O /usr/bin/aria2c https://github.com/<ysway>/openwrt-aria2/releases/latest/download/aria2c-<arch>
 chmod +x /usr/bin/aria2c
 ```
 
@@ -107,7 +107,7 @@ openwrt-aria2/
 ├── build_scripts/          # Build, verify, package scripts
 ├── package/aria2-static/   # OpenWrt package definition
 ├── feed_template/          # Feed index template
-├── install.sh              # Quick installer
+├── setup.sh                # Quick installer (named setup.sh to avoid autotools conflict)
 └── README.md
 ```
 
