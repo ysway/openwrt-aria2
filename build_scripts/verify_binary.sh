@@ -74,3 +74,4 @@ fi
 
 export FULLY_STATIC
 log_info "Verification complete. FULLY_STATIC=$FULLY_STATIC"
+printf 'FULLY_STATIC=%s\n' "$FULLY_STATIC"

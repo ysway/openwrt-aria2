@@ -24,6 +24,14 @@ SRC_DIR="$BUILDDIR/src"
 ensure_dir "$SRC_DIR" "$PREFIX"
 
 COMMON_CFLAGS="-O2 ${EXTRA_CFLAGS:-}"
+EXTRA_LIBS_ARRAY=()
+EXTRA_LIBS_STRING=""
+
+if [ -n "${EXTRA_LIBS:-}" ]; then
+    read -r -a extra_libs_raw <<< "$EXTRA_LIBS"
+    mapfile -t EXTRA_LIBS_ARRAY < <(resolve_extra_libs "${TARGET_HOST}-gcc" "${extra_libs_raw[@]}")
+    EXTRA_LIBS_STRING="${EXTRA_LIBS_ARRAY[*]}"
+fi
 
 # ── Download all sources ────────────────────────────────────────────────────
 log_info "Downloading dependency sources..."
@@ -87,10 +95,18 @@ cd "$BUILDDIR"
 rm -rf "openssl-${OPENSSL_VERSION}"
 extract_source "$SRC_DIR/openssl-${OPENSSL_VERSION}.tar.gz" "$BUILDDIR"
 cd "openssl-${OPENSSL_VERSION}"
-./Configure "$OPENSSL_TARGET" no-shared no-module no-tests \
-    --cross-compile-prefix="${TARGET_HOST}-" \
-    --prefix="$PREFIX" --libdir=lib \
+openssl_configure_args=(
+    "$OPENSSL_TARGET"
+    no-shared
+    no-module
+    no-apps
+    no-tests
+    --cross-compile-prefix="${TARGET_HOST}-"
+    --prefix="$PREFIX"
+    --libdir=lib
     -O2
+)
+./Configure "${openssl_configure_args[@]}"
 make -j"$NPROC"
 make install_sw
 
@@ -102,9 +118,11 @@ extract_source "$SRC_DIR/libssh2-${LIBSSH2_VERSION}.tar.bz2" "$BUILDDIR"
 cd "libssh2-${LIBSSH2_VERSION}"
 ./configure --host="$TARGET_HOST" --prefix="$PREFIX" \
     --disable-shared --enable-static \
+    --disable-tests --disable-examples-build \
     --with-crypto=openssl --with-libssl-prefix="$PREFIX" \
     CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib" \
     CFLAGS="$COMMON_CFLAGS" \
+    LIBS="$EXTRA_LIBS_STRING" \
     PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 make -j"$NPROC"
 make install

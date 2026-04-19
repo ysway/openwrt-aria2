@@ -75,7 +75,7 @@ log_info "Verifying binary..."
 VERIFY_LOG="/tmp/verify.log"
 bash "$SCRIPT_DIR/verify_binary.sh" "$BINARY" 2>&1 | tee "$VERIFY_LOG" || true
 
-FULLY_STATIC=$(grep 'FULLY_STATIC=' "$VERIFY_LOG" | tail -1 | cut -d= -f2)
+FULLY_STATIC=$(awk -F= '/^FULLY_STATIC=/{value=$2} END{print value}' "$VERIFY_LOG")
 export FULLY_STATIC="${FULLY_STATIC:-unknown}"
 
 # ── Compress with UPX ──────────────────────────────────────────────────────

@@ -18,6 +18,28 @@ log_warn()  { echo "WARNING: $*" >&2; }
 log_error() { echo "ERROR: $*" >&2; }
 log_fatal() { log_error "$@"; exit 1; }
 
+resolve_extra_libs() {
+    local compiler="${1:?compiler required}"
+    shift || true
+
+    local item archive
+    for item in "$@"; do
+        case "$item" in
+            -latomic)
+                archive="$($compiler -print-file-name=libatomic.a 2>/dev/null || true)"
+                if [ -n "$archive" ] && [ "$archive" != "libatomic.a" ] && [ -f "$archive" ]; then
+                    printf '%s\n' "$archive"
+                else
+                    printf '%s\n' "$item"
+                fi
+                ;;
+            *)
+                printf '%s\n' "$item"
+                ;;
+        esac
+    done
+}
+
 ensure_dir() {
     mkdir -p "$@"
 }

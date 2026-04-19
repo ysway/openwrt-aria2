@@ -19,7 +19,10 @@ set -euo pipefail
 auto_detect_target_host() {
     local toolchain_dir="${1:?toolchain dir required}"
     local gcc_path
-    gcc_path=$(find "$toolchain_dir/bin" -maxdepth 1 -name '*-gcc' ! -name '*-wrapper' 2>/dev/null | head -1)
+    gcc_path=$(find "$toolchain_dir/bin" -maxdepth 1 -name '*-musl*-gcc' ! -name '*-wrapper' 2>/dev/null | sort | head -1)
+    if [ -z "$gcc_path" ]; then
+        gcc_path=$(find "$toolchain_dir/bin" -maxdepth 1 -name '*-gcc' ! -name '*-wrapper' 2>/dev/null | sort | head -1)
+    fi
     if [ -n "$gcc_path" ]; then
         basename "$gcc_path" | sed 's/-gcc$//'
     fi
@@ -30,6 +33,7 @@ resolve_target() {
     TARGET_HOST=""
     OPENSSL_TARGET=""
     EXTRA_CFLAGS=""
+    EXTRA_LIBS=""
     UPX_SKIP="no"
 
     case "$platform" in
@@ -44,10 +48,12 @@ resolve_target() {
         arm_*)
             TARGET_HOST="arm-openwrt-linux-muslgnueabi"
             OPENSSL_TARGET="linux-armv4"
+            EXTRA_LIBS="-latomic"
             ;;
         i386_*)
             TARGET_HOST="i486-openwrt-linux-musl"
             OPENSSL_TARGET="linux-elf"
+            EXTRA_LIBS="-latomic"
             ;;
         mips64el_*)
             TARGET_HOST="mips64el-openwrt-linux-musl"
@@ -62,10 +68,12 @@ resolve_target() {
         mipsel_*)
             TARGET_HOST="mipsel-openwrt-linux-musl"
             OPENSSL_TARGET="linux-mips32"
+            EXTRA_LIBS="-latomic"
             ;;
         mips_*)
             TARGET_HOST="mips-openwrt-linux-musl"
             OPENSSL_TARGET="linux-mips32"
+            EXTRA_LIBS="-latomic"
             ;;
         riscv64_*)
             TARGET_HOST="riscv64-openwrt-linux-musl"
@@ -83,5 +91,5 @@ resolve_target() {
             ;;
     esac
 
-    export TARGET_HOST OPENSSL_TARGET EXTRA_CFLAGS UPX_SKIP
+    export TARGET_HOST OPENSSL_TARGET EXTRA_CFLAGS EXTRA_LIBS UPX_SKIP
 }
