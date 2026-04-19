@@ -1,6 +1,9 @@
 name: Build aria2
 
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       sdk_version:
@@ -72,7 +75,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: true
           path: repo
@@ -139,7 +142,7 @@ jobs:
           fi
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aria2-static-${{ matrix.platform }}
           path: ${{ env.ARTIFACT_DIR }}/${{ matrix.platform }}/
@@ -158,12 +161,12 @@ jobs:
       BUILD_DATE: ${{ needs.build.outputs.date }}
     steps:
       - name: Download Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ${{ env.ARTIFACT_DIR }}
 
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: repo
 
@@ -238,7 +241,7 @@ jobs:
       BUILD_DATE: ${{ needs.build.outputs.date }}
     steps:
       - name: Download Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ${{ env.ARTIFACT_DIR }}
 
@@ -332,7 +335,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Publish Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: "aria2-static ${{ env.RELEASE_VERSION }} (OpenWrt)"
