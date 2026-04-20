@@ -3,7 +3,7 @@
 [![Build aria2](https://github.com/ysway/openwrt-aria2/actions/workflows/build-aria2.yml/badge.svg)](https://github.com/ysway/openwrt-aria2/actions/workflows/build-aria2.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Statically linked [aria2](https://aria2.github.io/) builds for [OpenWrt](https://openwrt.org/), compiled with OpenSSL and full feature support across 33 target architectures.
+Statically linked [aria2](https://aria2.github.io/) builds for [OpenWrt](https://openwrt.org/), compiled with OpenSSL and full feature support across 33 target architectures. Releases publish versioned `.ipk`, `.apk`, and raw `aria2c` assets, while the `feed` branch serves a GitHub Pages landing page plus per-architecture OPKG metadata.
 
 ## Features
 
@@ -14,7 +14,7 @@ Statically linked [aria2](https://aria2.github.io/) builds for [OpenWrt](https:/
 - **33 OpenWrt target architectures** — built inside official OpenWrt SDK containers
 - **UPX compressed** where safe (auto-skipped on mips64, riscv64, loongarch64)
 - **Dual package format** — `.ipk` (OpenWrt ≤24.10) and `.apk` (OpenWrt ≥25.12)
-- **Automated upstream tracking** — daily checks for new aria2 releases via git submodule
+- **Automated upstream tracking** — daily checks for new `aria2-builder` upstream commits via git submodule
 
 ## Supported Architectures
 
@@ -49,19 +49,32 @@ cat /etc/apk/arch
 
 ## Installation
 
-### Option 1: Download .ipk from Releases (recommended for OpenWrt ≤24.10)
+### Published artifact names
+
+- `aria2-static_<version>_<arch>.ipk` — release IPK package for OpenWrt 24.10 and older
+- `aria2-static_<version>_<arch>.apk` — release APK package for OpenWrt 25.12 and newer
+- `aria2c_<version>_<arch>` — raw binary for manual deployment
+
+The `feed` branch keeps per-architecture directories with `Packages`, `Packages.gz`, `BUILDINFO`, the raw `aria2c` binary, and any matching package files.
+
+### Option 1: Download the matching `.ipk` from Releases (recommended for OpenWrt ≤24.10)
 
 ```bash
-# Download the .ipk for your architecture from GitHub Releases
-wget https://github.com/ysway/openwrt-aria2/releases/latest/download/aria2-static_<version>_<arch>.ipk
-opkg install aria2-static_*.ipk
+VERSION="<version>"
+ARCH="$(opkg print-architecture | awk 'NF==3 && $3~/^[0-9]+$/ {print $2}' | tail -1)"
+
+wget "https://github.com/ysway/openwrt-aria2/releases/download/v${VERSION}-openwrt/aria2-static_${VERSION}_${ARCH}.ipk"
+opkg install "aria2-static_${VERSION}_${ARCH}.ipk"
 ```
 
-### Option 2: Download .apk from Releases (OpenWrt ≥25.12)
+### Option 2: Download the matching `.apk` from Releases (OpenWrt ≥25.12)
 
 ```bash
-wget https://github.com/ysway/openwrt-aria2/releases/latest/download/aria2-static-<version>-r1.apk
-apk add --allow-untrusted aria2-static-*.apk
+VERSION="<version>"
+ARCH="$(cat /etc/apk/arch)"
+
+wget "https://github.com/ysway/openwrt-aria2/releases/download/v${VERSION}-openwrt/aria2-static_${VERSION}_${ARCH}.apk"
+apk add --allow-untrusted "aria2-static_${VERSION}_${ARCH}.apk"
 ```
 
 ### Option 3: Use the package feed (OpenWrt ≤24.10 / opkg)
@@ -83,21 +96,27 @@ opkg update
 opkg install aria2-static
 ```
 
-The site root at `https://ysway.github.io/openwrt-aria2/` is a landing page, not
-an `opkg` feed URL by itself.
+The site root at `https://ysway.github.io/openwrt-aria2/` is a landing page with per-architecture file tables and checksums, not an `opkg` feed URL by itself.
 
-### Option 4: Quick install script
+### Option 4: Setup helper script
 
 ```bash
 wget -O- https://raw.githubusercontent.com/ysway/openwrt-aria2/master/setup.sh | sh
 ```
 
+The helper resolves the latest release tag, detects whether the device uses `opkg` or `apk`, and installs the matching package. If neither package manager is available, it falls back to the raw `aria2c` binary.
+
 ### Option 5: Direct binary
 
 ```bash
-wget -O /usr/bin/aria2c https://github.com/ysway/openwrt-aria2/releases/latest/download/aria2c
+VERSION="<version>"
+ARCH="x86_64"
+
+wget -O /usr/bin/aria2c "https://github.com/ysway/openwrt-aria2/releases/download/v${VERSION}-openwrt/aria2c_${VERSION}_${ARCH}"
 chmod +x /usr/bin/aria2c
 ```
+
+Use the raw binary path only if you do not want the OpenWrt package metadata, init script, or default UCI config.
 
 ## Configuration
 
@@ -116,8 +135,9 @@ Default configuration is in `/etc/config/aria2`. The init script starts aria2 wi
 
 ## Feed Notes
 
-- The GitHub Pages feed currently serves `.ipk` packages only.
-- `.apk` packages are published in GitHub Releases, but there is not yet an APK repository index for `apk add` by URL.
+- The GitHub Pages root publishes a landing page generated from `feed_template/` and filled during CI with per-architecture tables.
+- OPKG feed metadata is generated per platform, so `.ipk` packages can be installed directly from `https://ysway.github.io/openwrt-aria2/<arch>`.
+- `.apk` packages are mirrored in the feed directories and attached to GitHub Releases, but there is not yet a signed APK repository index for `apk add` by URL.
 - If you fork this repository and want the feed to work, enable GitHub Pages for the `feed` branch in repository settings.
 
 ## How It Works
@@ -125,7 +145,7 @@ Default configuration is in `/etc/config/aria2`. The init script starts aria2 wi
 ### Build Pipeline
 
 ```
-sync-upstream.yml (daily cron / manual)
+sync-upstream.yml (daily cron / manual on ubuntu-slim)
   └─ Detects new aria2-builder commits
   └─ Pushes submodule update
   └─ Triggers build via repository_dispatch
@@ -186,9 +206,11 @@ docker run --rm --user root \
 
 Output will be in `output/<platform>/`:
 - `aria2c` — statically linked binary (UPX compressed if supported)
-- `aria2-static_<ver>_<platform>.ipk` — OpenWrt IPK package
+- `aria2-static_<ver>-1_<platform>.ipk` — local OpenWrt IPK package
 - `aria2-static-<ver>-r1.apk` — OpenWrt APK package
 - `BUILDINFO` — build metadata
+
+The release job renames the published assets to `aria2-static_<version>_<platform>.ipk`, `aria2-static_<version>_<platform>.apk`, and `aria2c_<version>_<platform>`.
 
 ### Build for the 25.12 SDK
 
@@ -236,7 +258,9 @@ openwrt-aria2/
 ├── aria2-builder/               # Git submodule → AnInsomniacy/aria2-builder
 ├── build_scripts/               # All build, verify, and packaging scripts
 ├── package/aria2-static/        # OpenWrt package definition (Makefile, init script, UCI config)
-├── feed_template/               # GitHub Pages feed index template
+├── feed_template/
+│   ├── index.html              # GitHub Pages landing page template
+│   └── style.css               # GitHub Pages landing page styles
 ├── setup.sh                     # Quick installer for OpenWrt devices
 ├── LICENSE                      # MIT (build scripts); GPL-2.0 (aria2 binaries)
 └── README.md
@@ -248,7 +272,8 @@ openwrt-aria2/
 - **OpenSSL only**: No GnuTLS fallback. OpenSSL provides TLS 1.3 and is the upstream reference choice.
 - **UPX with safety net**: Compression is attempted with integrity testing. Known-incompatible architectures (mips64, riscv64, loongarch64) are automatically skipped. Failed packing restores the original binary.
 - **Verification per target**: Every build checks linkage via `readelf`/`ldd` and runs functional tests where possible.
-- **`docker run` pattern**: Builds use `docker run` from `ubuntu-latest` runners, not the GitHub Actions `container:` directive (which has context evaluation limitations with OpenWrt SDK images).
+- **`docker run` pattern**: Build jobs use `docker run` from `ubuntu-latest` runners, not the GitHub Actions `container:` directive (which has context evaluation limitations with OpenWrt SDK images).
+- **Lightweight sync runner**: `sync-upstream.yml` uses `ubuntu-slim` because it only needs Git, submodule updates, and the repository dispatch API.
 
 ## Contributing
 

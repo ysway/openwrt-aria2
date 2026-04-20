@@ -2,8 +2,8 @@ name: Sync Upstream
 
 on:
   schedule:
-    # Run daily at 06:00 UTC
-    - cron: '0 6 * * *'
+    # Run daily at 00:00 UTC
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 permissions:
@@ -12,7 +12,8 @@ permissions:
 jobs:
   sync:
     name: Check for upstream aria2-builder updates
-    runs-on: ubuntu-latest
+    # Git-only automation job; no Docker or privileged build steps required.
+    runs-on: ubuntu-slim
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6

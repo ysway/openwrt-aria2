@@ -26,10 +26,10 @@ The CI/CD architecture is modeled after `GuNanOvO/openwrt-tailscale`, a proven w
 2. Running `apt-get` inside the SDK container via the `container:` directive is fragile and slow.
 3. The `container:` approach limits available GitHub Actions contexts and causes expression evaluation issues.
 
-**Instead, use the `docker run` command** from an `ubuntu-latest` runner:
+**Instead, use the `docker run` command** from an `ubuntu-latest` runner for build jobs. Lightweight Git-only automation such as `sync-upstream.yml` can use `ubuntu-slim`:
 
 ```yaml
-# CORRECT: docker run from host runner
+# CORRECT: docker run from host runner for build jobs
 runs-on: ubuntu-latest
 steps:
   - name: Build in SDK Container
@@ -59,7 +59,7 @@ Example: `ghcr.io/openwrt/sdk:x86_64-V24.10.4`
 ### Workflow Trigger Chain
 
 ```
-sync-upstream.yml (schedule/manual)
+sync-upstream.yml (schedule/manual on ubuntu-slim)
   → detects new aria2-builder commit
   → pushes submodule update
   → triggers build via repository_dispatch
@@ -97,7 +97,7 @@ The build pattern is:
 
 The `openwrt-tailscale` project validates the following reusable pattern:
 
-1. **`docker run` from `ubuntu-latest`** — NOT the `container:` directive.
+1. **`docker run` from `ubuntu-latest` for build jobs** — NOT the `container:` directive.
 2. **Volume mounts** to pass scripts, sources, and outputs between host and SDK container.
 3. **SDK image format**: `ghcr.io/openwrt/sdk:<platform>-V<version>` (capital V).
 4. **Version checking workflow**: scheduled checks for upstream updates, triggers build via `repository_dispatch`.
@@ -157,7 +157,8 @@ openwrt-aria2/
 │           ├── aria2.init
 │           └── aria2.conf
 ├── feed_template/
-│   └── index.html
+│   ├── index.html
+│   └── style.css
 ├── setup.sh
 └── README.md
 ```
@@ -178,6 +179,8 @@ openwrt-aria2/
 ### `sync-upstream.yml`
 
 **Trigger:** Daily schedule (06:00 UTC) + manual dispatch.
+
+**Runner:** `ubuntu-slim` — the job only needs Git, submodule updates, and the GitHub API, so a single-CPU runner is sufficient.
 
 **Flow:**
 1. Checkout repo with submodules.
@@ -206,15 +209,18 @@ openwrt-aria2/
    - Upload artifacts per target.
 
 2. **`deploy`** — Feed branch update (needs: build):
-   - Download all artifacts.
-   - Generate per-platform Packages index.
-   - Force-push to `feed` branch.
+  - Download all artifacts.
+  - Generate per-platform Packages index.
+  - Generate per-architecture HTML tables from the copied artifacts.
+  - Stamp release version and build date into the feed landing page template.
+  - Force-push to `feed` branch.
 
 3. **`release`** — GitHub Release (needs: build):
-   - Download all artifacts.
-   - Rename IPKs and APKs with platform suffix.
-   - Generate release notes markdown table (IPK + APK columns).
-   - Publish release via `softprops/action-gh-release`.
+  - Download all artifacts.
+  - Rename IPKs and APKs with platform suffix.
+  - Rename raw binaries to `aria2c_<version>_<platform>` to keep release asset names unique.
+  - Generate release notes markdown table (IPK + APK columns).
+  - Publish release via `softprops/action-gh-release`.
 
 ### `build_in_sdk.sh` — Container Entrypoint
 
@@ -325,7 +331,7 @@ The validated approach is:
 
 1. Use `aria2-builder` as a **submodule and Linux static-build reference**.
 2. Use `openwrt-tailscale` as the **OpenWrt SDK `docker run` / packaging / release / feed reference**.
-3. **Never use `container:` directive** — always use `docker run` from `ubuntu-latest`.
+3. **Never use `container:` directive** for SDK builds — use `docker run` from `ubuntu-latest`; use `ubuntu-slim` only for lightweight sync-only automation.
 4. Rebuild `aria2c` per OpenWrt target with static dependencies inside the SDK container.
 5. Verify static linkage per target.
 6. Apply UPX only after testing, skip on incompatible architectures.

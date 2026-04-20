@@ -1,5 +1,5 @@
 #!/bin/sh
-# Quick installer for aria2-static on OpenWrt
+# Quick installer for aria2-static on OpenWrt.
 #
 # Usage:
 #   wget -O- https://raw.githubusercontent.com/ysway/openwrt-aria2/master/setup.sh | sh
@@ -7,60 +7,115 @@
 # Or download and run:
 #   sh setup.sh
 
-set -e
+set -eu
 
 REPO="ysway/openwrt-aria2"
-FEED_URL="https://github.com/${REPO}/releases/latest/download"
+API_URL="https://api.github.com/repos/${REPO}/releases/latest"
+DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"
+TMPDIR="$(mktemp -d /tmp/aria2-static.XXXXXX)"
 
-# Detect architecture
-detect_arch() {
-    local arch
-    arch=$(opkg print-architecture 2>/dev/null | awk '/arch/{print $2}' | grep -v 'all' | head -1)
-    if [ -z "$arch" ]; then
-        arch=$(uname -m)
-        case "$arch" in
-            x86_64)       arch="x86_64" ;;
-            aarch64)      arch="aarch64_generic" ;;
-            armv7*)       arch="arm_cortex-a7" ;;
-            mips)         arch="mips_24kc" ;;
-            mipsel)       arch="mipsel_24kc" ;;
-            riscv64)      arch="riscv64_generic" ;;
-            loongarch64)  arch="loongarch64_generic" ;;
-            i?86)         arch="i386_pentium4" ;;
-            *)
-                echo "ERROR: Unsupported architecture: $arch" >&2
-                exit 1
-                ;;
-        esac
-    fi
-    echo "$arch"
+cleanup() {
+    rm -rf "$TMPDIR"
 }
 
-ARCH=$(detect_arch)
-echo "Detected architecture: $ARCH"
+trap cleanup EXIT INT TERM
 
-# Try opkg install from feed first
-if command -v opkg >/dev/null 2>&1; then
-    echo "Attempting opkg install..."
-    IPK_URL="${FEED_URL}/aria2-static_*_${ARCH}.ipk"
-    TMPFILE=$(mktemp /tmp/aria2-static.XXXXXX.ipk)
-    if wget -q -O "$TMPFILE" "${FEED_URL}/aria2c-${ARCH}" 2>/dev/null; then
-        # Direct binary install fallback
-        echo "Installing binary directly..."
-        mv "$TMPFILE" /usr/bin/aria2c
-        chmod 755 /usr/bin/aria2c
-    else
-        rm -f "$TMPFILE"
-        echo "ERROR: Could not download aria2-static for $ARCH" >&2
-        echo "Visit https://github.com/${REPO}/releases for manual download." >&2
-        exit 1
+detect_arch() {
+    if command -v apk >/dev/null 2>&1 && [ -f /etc/apk/arch ]; then
+        cat /etc/apk/arch
+        return
     fi
+
+    if command -v opkg >/dev/null 2>&1; then
+        opkg print-architecture 2>/dev/null \
+            | awk 'NF==3 && $3~/^[0-9]+$/ {print $2}' \
+            | tail -1
+        return
+    fi
+
+    arch="$(uname -m)"
+    case "$arch" in
+        x86_64)        echo "x86_64" ;;
+        aarch64)       echo "aarch64_generic" ;;
+        armv7*|armv6*) echo "arm_cortex-a7" ;;
+        mips)          echo "mips_24kc" ;;
+        mipsel)        echo "mipsel_24kc" ;;
+        riscv64)       echo "riscv64_generic" ;;
+        loongarch64)   echo "loongarch64_generic" ;;
+        i?86)          echo "i386_pentium4" ;;
+        *)
+            echo "ERROR: Unsupported architecture: $arch" >&2
+            exit 1
+            ;;
+    esac
+}
+
+get_latest_tag() {
+    wget -qO- "$API_URL" \
+        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        | head -n 1
+}
+
+download_asset() {
+    asset_name="$1"
+    destination="$2"
+    asset_url="${DOWNLOAD_BASE}/${LATEST_TAG}/${asset_name}"
+
+    echo "Downloading ${asset_name}..."
+    wget -q -O "$destination" "$asset_url"
+}
+
+install_with_opkg() {
+    asset_name="aria2-static_${VERSION}_${ARCH}.ipk"
+    pkg_path="$TMPDIR/$asset_name"
+
+    download_asset "$asset_name" "$pkg_path"
+    echo "Installing ${asset_name} with opkg..."
+    opkg install "$pkg_path"
+}
+
+install_with_apk() {
+    asset_name="aria2-static_${VERSION}_${ARCH}.apk"
+    pkg_path="$TMPDIR/$asset_name"
+
+    download_asset "$asset_name" "$pkg_path"
+    echo "Installing ${asset_name} with apk..."
+    apk add --allow-untrusted "$pkg_path"
+}
+
+install_raw_binary() {
+    asset_name="aria2c_${VERSION}_${ARCH}"
+    binary_path="$TMPDIR/$asset_name"
+
+    download_asset "$asset_name" "$binary_path"
+    echo "Installing raw binary fallback..."
+    install -m 0755 "$binary_path" /usr/bin/aria2c
+}
+
+LATEST_TAG="$(get_latest_tag)"
+if [ -z "$LATEST_TAG" ]; then
+    echo "ERROR: Could not determine the latest release tag from ${API_URL}" >&2
+    exit 1
 fi
 
-# Verify
+VERSION="${LATEST_TAG#v}"
+VERSION="${VERSION%-openwrt}"
+ARCH="$(detect_arch)"
+
+echo "Latest release: $LATEST_TAG"
+echo "Detected architecture: $ARCH"
+
+if command -v apk >/dev/null 2>&1 && [ -f /etc/apk/arch ]; then
+    install_with_apk
+elif command -v opkg >/dev/null 2>&1; then
+    install_with_opkg
+else
+    install_raw_binary
+fi
+
 if /usr/bin/aria2c --version >/dev/null 2>&1; then
-    echo "aria2c installed successfully!"
+    echo "aria2c installed successfully"
     /usr/bin/aria2c --version | head -1
 else
-    echo "WARNING: aria2c installed but could not verify (may need reboot)"
+    echo "WARNING: aria2c installed but could not be verified" >&2
 fi
