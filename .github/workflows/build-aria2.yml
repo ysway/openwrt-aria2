@@ -225,6 +225,74 @@ jobs:
             cd ..
           done
 
+          # Generate HTML sections for each architecture and insert into index.html
+          generate_arch_sections() {
+            for arch_dir in */; do
+              [ -d "$arch_dir" ] || continue
+              arch="${arch_dir%/}"
+
+              echo "<details class=\"arch-section\">"
+              echo "    <summary>$arch</summary>"
+              echo "    <table>"
+              echo "        <thead>"
+              echo "            <tr><th>File</th><th>Size</th><th>Sha256Sum</th></tr>"
+              echo "        </thead>"
+              echo "        <tbody>"
+
+              for file_path in "$arch"/*; do
+                [ -f "$file_path" ] || continue
+
+                file=$(basename "$file_path")
+
+                case "$file" in
+                  *.ipk|*.apk|aria2c|BUILDINFO|Packages|Packages.gz|Packages.sig|packages.adb)
+                    ;;
+                  *)
+                    continue
+                    ;;
+                esac
+
+                fsize=$(du -h "$file_path" | cut -f1)
+                fsha256=$(sha256sum "$file_path" | cut -d' ' -f1)
+
+                echo "            <tr>"
+                echo "                <td><a href=\"$arch/$file\">$file</a></td>"
+                echo "                <td class=\"size-cell\">$fsize</td>"
+                echo "                <td class=\"sha256-cell\">$fsha256</td>"
+                echo "            </tr>"
+              done
+
+              echo "        </tbody>"
+              echo "    </table>"
+              echo "</details>"
+            done
+          }
+
+          generate_arch_sections > tbody.tmp
+
+          sed -i '/<!-- arch-section-anchor -->/,/<!-- end-arch-section-anchor -->/ {
+            /<!-- arch-section-anchor -->/!{
+              /<!-- end-arch-section-anchor -->/!d
+            }
+          }' index.html
+          sed -i '/<!-- arch-section-anchor -->/r tbody.tmp' index.html
+
+          current_date="${{ env.BUILD_DATE }}"
+          sed -i '/<!-- date-anchor -->/,/<!-- end-date-anchor -->/ {
+            /<strong id="date">/ {
+              s#<strong id="date">.*</strong>#<strong id="date">'"${current_date}"'</strong>#
+            }
+          }' index.html
+
+          version="${{ env.RELEASE_VERSION }}"
+          sed -i '/<!-- version-anchor -->/,/<!-- end-version-anchor -->/ {
+            /<strong id="version">/ {
+              s#<strong id="version">.*</strong>#<strong id="version">'"${version}"'</strong>#
+            }
+          }' index.html
+
+          rm -f tbody.tmp
+
           git add -A
           git commit -m "Update feed: ${{ env.BUILD_DATE }}"
           git push origin feed --force
@@ -273,6 +341,17 @@ jobs:
               new_name="aria2-static_${{ env.RELEASE_VERSION }}_${platform}.apk"
               mv "$apk" "$arch_dir/$new_name" 2>/dev/null || true
             done
+          done
+
+          # Rename raw binaries too, otherwise every upload collides on the same aria2c asset name.
+          for arch_dir in "${{ env.ARTIFACT_DIR }}"/*/; do
+            [ -d "$arch_dir" ] || continue
+            arch=$(basename "$arch_dir")
+            platform="${arch#aria2-static-}"
+
+            if [ -f "$arch_dir/aria2c" ]; then
+              mv "$arch_dir/aria2c" "$arch_dir/aria2c_${{ env.RELEASE_VERSION }}_${platform}" 2>/dev/null || true
+            fi
           done
 
           # Build release table
@@ -343,4 +422,4 @@ jobs:
           files: |
             ${{ env.ARTIFACT_DIR }}/**/*.ipk
             ${{ env.ARTIFACT_DIR }}/**/*.apk
-            ${{ env.ARTIFACT_DIR }}/**/aria2c
+            ${{ env.ARTIFACT_DIR }}/**/aria2c_*
