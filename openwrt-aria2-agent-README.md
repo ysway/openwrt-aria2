@@ -60,14 +60,14 @@ Example: `ghcr.io/openwrt/sdk:x86_64-V24.10.4`
 
 ```
 sync-upstream.yml (schedule/manual on ubuntu-slim)
-  → detects new aria2-builder commit
+  → detects new aria2-builder tagged release
   → pushes submodule update
   → triggers build via repository_dispatch
 
-build-aria2.yml (dispatch triggers)
+build-aria2.yml (manual / repository_dispatch)
   → build job: matrix build across all targets via docker run
   → deploy job: updates feed branch
-  → release job: creates GitHub Release
+  → release job: creates or updates the GitHub Release tagged with the upstream aria2 version
 ```
 
 ---
@@ -178,14 +178,14 @@ openwrt-aria2/
 
 ### `sync-upstream.yml`
 
-**Trigger:** Daily schedule (06:00 UTC) + manual dispatch.
+**Trigger:** Daily schedule (00:00 UTC) + manual dispatch.
 
 **Runner:** `ubuntu-slim` — the job only needs Git, submodule updates, and the GitHub API, so a single-CPU runner is sufficient.
 
 **Flow:**
 1. Checkout repo with submodules.
-2. `git submodule update --remote -- aria2-builder`.
-3. Compare old vs new SHA.
+2. Fetch `aria2-builder` tags and checkout the latest tagged release.
+3. Compare old vs new SHA/tag.
 4. If changed: commit + push the updated gitlink.
 5. Trigger `build-aria2.yml` via `repository_dispatch` event (`build-aria2` type).
 
@@ -219,8 +219,8 @@ openwrt-aria2/
   - Download all artifacts.
   - Rename IPKs and APKs with platform suffix.
   - Rename raw binaries to `aria2c_<version>_<platform>` to keep release asset names unique.
-  - Generate release notes markdown table (IPK + APK columns).
-  - Publish release via `softprops/action-gh-release`.
+  - Generate release notes markdown table (IPK + APK + binary columns).
+  - Publish or refresh the GitHub Release under the upstream aria2 tag (`v<version>`) via `softprops/action-gh-release`.
 
 ### `build_in_sdk.sh` — Container Entrypoint
 

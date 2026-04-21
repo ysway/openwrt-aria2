@@ -1,9 +1,6 @@
 name: Build aria2
 
 on:
-  push:
-    branches:
-      - master
   workflow_dispatch:
     inputs:
       sdk_version:
@@ -156,7 +153,7 @@ jobs:
     permissions:
       contents: write
     env:
-      RELEASE_TAG: v${{ needs.build.outputs.version }}-openwrt
+      RELEASE_TAG: v${{ needs.build.outputs.version }}
       RELEASE_VERSION: ${{ needs.build.outputs.version }}
       BUILD_DATE: ${{ needs.build.outputs.date }}
     steps:
@@ -304,7 +301,6 @@ jobs:
     permissions:
       contents: write
     env:
-      RELEASE_TAG: v${{ needs.build.outputs.version }}-openwrt
       RELEASE_VERSION: ${{ needs.build.outputs.version }}
       BUILD_DATE: ${{ needs.build.outputs.date }}
     steps:
@@ -313,8 +309,36 @@ jobs:
         with:
           path: ${{ env.ARTIFACT_DIR }}
 
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+          path: repo
+
+      - name: Determine Upstream Release Tag
+        id: get_release_tag
+        run: |
+          set -euo pipefail
+
+          git -C repo/aria2-builder fetch --force --tags origin
+          RELEASE_TAG=$(git -C repo/aria2-builder describe --tags --exact-match HEAD 2>/dev/null || true)
+
+          if [ -z "$RELEASE_TAG" ]; then
+            RELEASE_TAG='${{ github.event.client_payload.tag }}'
+          fi
+
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "ERROR: Could not determine upstream aria2-builder release tag" >&2
+            exit 1
+          fi
+
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Using upstream release tag: $RELEASE_TAG"
+
       - name: Prepare Release Files and Notes
         id: prepare_release
+        env:
+          RELEASE_TAG: ${{ steps.get_release_tag.outputs.tag }}
         run: |
           # Rename packages to include platform in filename for release
           for arch_dir in "${{ env.ARTIFACT_DIR }}"/*/; do
@@ -355,7 +379,7 @@ jobs:
           done
 
           # Build release table
-          table="| Target Platform | IPK Package (OpenWrt ≤24.10) | APK Package (OpenWrt ≥25.12) |\n|:--- |:--- |:--- |"
+          table="| Target Platform | IPK Package (OpenWrt ≤24.10) | APK Package (OpenWrt ≥25.12) | Raw Binary |\n|:--- |:--- |:--- |:--- |"
           rows=""
 
           for arch_dir in "${{ env.ARTIFACT_DIR }}"/*/; do
@@ -365,33 +389,40 @@ jobs:
 
             ipk_file=$(ls "$arch_dir"/*.ipk 2>/dev/null | head -1 | xargs -n1 basename 2>/dev/null || echo "none")
             apk_file=$(ls "$arch_dir"/*.apk 2>/dev/null | head -1 | xargs -n1 basename 2>/dev/null || echo "none")
+            bin_file=$(ls "$arch_dir"/aria2c_* 2>/dev/null | head -1 | xargs -n1 basename 2>/dev/null || echo "none")
 
             if [ "$ipk_file" != "none" ]; then
-              ipk_link="[${ipk_file}](https://github.com/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/releases/download/${{ env.RELEASE_TAG }}/${ipk_file})"
+              ipk_link="[${ipk_file}](https://github.com/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/releases/download/${RELEASE_TAG}/${ipk_file})"
             else
               ipk_link="N/A"
             fi
 
             if [ "$apk_file" != "none" ]; then
-              apk_link="[${apk_file}](https://github.com/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/releases/download/${{ env.RELEASE_TAG }}/${apk_file})"
+              apk_link="[${apk_file}](https://github.com/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/releases/download/${RELEASE_TAG}/${apk_file})"
             else
               apk_link="N/A"
             fi
 
-            rows="${rows}\n| ${platform} | ${ipk_link} | ${apk_link} |"
+            if [ "$bin_file" != "none" ]; then
+              bin_link="[${bin_file}](https://github.com/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/releases/download/${RELEASE_TAG}/${bin_file})"
+            else
+              bin_link="N/A"
+            fi
+
+            rows="${rows}\n| ${platform} | ${ipk_link} | ${apk_link} | ${bin_link} |"
           done
 
           full_table="${table}${rows}"
 
           release_body="## aria2-static for OpenWrt
-          #### Version: ${{ env.RELEASE_TAG }}
+          #### Version: ${RELEASE_TAG}
           #### Build Date: ${{ env.BUILD_DATE }}
           ---
 
           Statically linked aria2 build for OpenWrt using official SDK.
           - Compiled with official OpenWrt SDK.
           - UPX compression applied where supported.
-          - Standard IPK and APK packages for direct installation.
+          - Standard IPK, APK, and raw binary assets for direct installation.
 
           #### Architecture Check
           OpenWrt 24.10 or earlier:
@@ -416,7 +447,7 @@ jobs:
       - name: Publish Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
+          tag_name: ${{ steps.get_release_tag.outputs.tag }}
           name: "aria2-static ${{ env.RELEASE_VERSION }} (OpenWrt)"
           body: ${{ steps.prepare_release.outputs.release_body }}
           files: |

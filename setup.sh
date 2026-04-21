@@ -99,7 +99,6 @@ if [ -z "$LATEST_TAG" ]; then
 fi
 
 VERSION="${LATEST_TAG#v}"
-VERSION="${VERSION%-openwrt}"
 ARCH="$(detect_arch)"
 
 echo "Latest release: $LATEST_TAG"

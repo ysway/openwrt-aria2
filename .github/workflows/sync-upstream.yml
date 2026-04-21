@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   sync:
-    name: Check for upstream aria2-builder updates
+    name: Check for upstream aria2-builder releases
     # Git-only automation job; no Docker or privileged build steps required.
     runs-on: ubuntu-slim
     steps:
@@ -23,25 +23,37 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update submodule to latest upstream
+      - name: Update submodule to latest tagged release
         id: update
         run: |
           set -euo pipefail
           OLD_SHA=$(git rev-parse HEAD:aria2-builder)
-          git submodule update --init --remote -- aria2-builder
+          OLD_TAG=$(git -C aria2-builder describe --tags --exact-match HEAD 2>/dev/null || echo "detached-${OLD_SHA}")
+
+          git -C aria2-builder fetch --force --tags origin
+          NEW_TAG=$(git -C aria2-builder tag --sort=-v:refname | head -1)
+
+          if [ -z "$NEW_TAG" ]; then
+            echo "ERROR: Could not determine the latest aria2-builder release tag" >&2
+            exit 1
+          fi
+
+          git -C aria2-builder checkout --detach "$NEW_TAG"
           NEW_SHA=$(git -C aria2-builder rev-parse HEAD)
 
           git add aria2-builder
 
           echo "old_sha=$OLD_SHA" >> "$GITHUB_OUTPUT"
+          echo "old_tag=$OLD_TAG" >> "$GITHUB_OUTPUT"
           echo "new_sha=$NEW_SHA" >> "$GITHUB_OUTPUT"
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
 
           if git diff --cached --quiet -- aria2-builder; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Submodule already up to date"
+            echo "aria2-builder already pinned to latest tagged release: $NEW_TAG"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Submodule updated: $OLD_SHA -> $NEW_SHA"
+            echo "aria2-builder updated: $OLD_TAG ($OLD_SHA) -> $NEW_TAG ($NEW_SHA)"
           fi
 
       - name: Commit updated gitlink
@@ -50,7 +62,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: update aria2-builder submodule to ${{ steps.update.outputs.new_sha }}"
+          git commit -m "chore: update aria2-builder submodule to ${{ steps.update.outputs.new_tag }}"
           git push origin HEAD:${{ github.event.repository.default_branch }}
 
       - name: Trigger build workflow
@@ -65,6 +77,7 @@ jobs:
               repo: context.repo.repo,
               event_type: 'build-aria2',
               client_payload: {
+                tag: '${{ steps.update.outputs.new_tag }}',
                 sha: '${{ steps.update.outputs.new_sha }}'
               }
             });

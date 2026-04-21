@@ -14,7 +14,7 @@ Statically linked [aria2](https://aria2.github.io/) builds for [OpenWrt](https:/
 - **33 OpenWrt target architectures** — built inside official OpenWrt SDK containers
 - **UPX compressed** where safe (auto-skipped on mips64, riscv64, loongarch64)
 - **Dual package format** — `.ipk` (OpenWrt ≤24.10) and `.apk` (OpenWrt ≥25.12)
-- **Automated upstream tracking** — daily checks for new `aria2-builder` upstream commits via git submodule
+- **Automated upstream tracking** — daily checks for new `aria2-builder` tagged releases via git submodule
 
 ## Supported Architectures
 
@@ -56,6 +56,7 @@ cat /etc/apk/arch
 - `aria2c_<version>_<arch>` — raw binary for manual deployment
 
 The `feed` branch keeps per-architecture directories with `Packages`, `Packages.gz`, `BUILDINFO`, the raw `aria2c` binary, and any matching package files.
+GitHub Releases in this repository are tagged as `v<aria2-version>`, matching the upstream aria2 release tag.
 
 ### Option 1: Download the matching `.ipk` from Releases (recommended for OpenWrt ≤24.10)
 
@@ -63,7 +64,7 @@ The `feed` branch keeps per-architecture directories with `Packages`, `Packages.
 VERSION="<version>"
 ARCH="$(opkg print-architecture | awk 'NF==3 && $3~/^[0-9]+$/ {print $2}' | tail -1)"
 
-wget "https://github.com/ysway/openwrt-aria2/releases/download/v${VERSION}-openwrt/aria2-static_${VERSION}_${ARCH}.ipk"
+wget "https://github.com/ysway/openwrt-aria2/releases/download/v${VERSION}/aria2-static_${VERSION}_${ARCH}.ipk"
 opkg install "aria2-static_${VERSION}_${ARCH}.ipk"
 ```
 
@@ -73,7 +74,7 @@ opkg install "aria2-static_${VERSION}_${ARCH}.ipk"
 VERSION="<version>"
 ARCH="$(cat /etc/apk/arch)"
 
-wget "https://github.com/ysway/openwrt-aria2/releases/download/v${VERSION}-openwrt/aria2-static_${VERSION}_${ARCH}.apk"
+wget "https://github.com/ysway/openwrt-aria2/releases/download/v${VERSION}/aria2-static_${VERSION}_${ARCH}.apk"
 apk add --allow-untrusted "aria2-static_${VERSION}_${ARCH}.apk"
 ```
 
@@ -96,7 +97,7 @@ opkg update
 opkg install aria2-static
 ```
 
-The site root at `https://ysway.github.io/openwrt-aria2/` is a landing page with per-architecture file tables and checksums, not an `opkg` feed URL by itself.
+The site root at [`https://ysway.github.io/openwrt-aria2/`](https://ysway.github.io/openwrt-aria2/) is a landing page with per-architecture file tables and checksums, not an `opkg` feed URL by itself.
 
 ### Option 4: Setup helper script
 
@@ -112,7 +113,7 @@ The helper resolves the latest release tag, detects whether the device uses `opk
 VERSION="<version>"
 ARCH="x86_64"
 
-wget -O /usr/bin/aria2c "https://github.com/ysway/openwrt-aria2/releases/download/v${VERSION}-openwrt/aria2c_${VERSION}_${ARCH}"
+wget -O /usr/bin/aria2c "https://github.com/ysway/openwrt-aria2/releases/download/v${VERSION}/aria2c_${VERSION}_${ARCH}"
 chmod +x /usr/bin/aria2c
 ```
 
@@ -146,18 +147,18 @@ Default configuration is in `/etc/config/aria2`. The init script starts aria2 wi
 
 ```
 sync-upstream.yml (daily cron / manual on ubuntu-slim)
-  └─ Detects new aria2-builder commits
-  └─ Pushes submodule update
+  └─ Detects new aria2-builder tagged release
+  └─ Pins the submodule to that release tag
   └─ Triggers build via repository_dispatch
        │
        ▼
-build-aria2.yml (33 parallel matrix jobs)
+build-aria2.yml (manual / repository_dispatch)
   └─ docker run inside official OpenWrt SDK container
   └─ Build static deps → Build aria2 → Verify → UPX → Package
   └─ Upload artifacts per target
        │
        ├─► deploy job: push to feed branch (GitHub Pages)
-       └─► release job: create GitHub Release with all packages
+       └─► release job: create or update GitHub Release tagged v<aria2-version>
 ```
 
 ### Static Dependencies
