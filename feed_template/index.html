@@ -128,7 +128,12 @@ apk add --allow-untrusted /tmp/aria2-static.apk</pre>
         <h2>Enable the service</h2>
         <section class="part">
           <p>The package ships with <code>/etc/init.d/aria2</code> and <code>/etc/config/aria2</code>.</p>
+          <p>
+            Its UCI layout follows the OpenWrt project's <code>aria2</code> package, so existing
+            OpenWrt-style settings and multi-instance <code>config aria2</code> sections can be reused.
+          </p>
           <pre>uci set aria2.main.enabled='1'
+uci set aria2.main.dir='/mnt/data/downloads'
 uci commit aria2
 service aria2 start
 service aria2 enable</pre>
@@ -139,7 +144,7 @@ service aria2 enable</pre>
           <ul>
             <li>RPC listens on port <code>6800</code>.</li>
             <li>Downloads go to <code>/tmp/aria2/downloads</code> by default.</li>
-            <li>Session state is written to <code>/var/lib/aria2/session</code>.</li>
+            <li>Rendered configs, session state, and DHT state live under <code>/var/etc/aria2</code>.</li>
             <li>BitTorrent Local Peer Discovery and DHT are enabled by default.</li>
           </ul>
         </section>
@@ -185,6 +190,7 @@ service aria2 enable</pre>
           <h2>Audit sources</h2>
           <ul>
             <li><a href="https://github.com/ysway/openwrt-aria2" target="_blank" rel="noreferrer">Repository source and workflows</a></li>
+            <li><a href="https://github.com/openwrt/packages/tree/master/net/aria2/files" target="_blank" rel="noreferrer">OpenWrt aria2 init/config reference</a></li>
             <li><a href="https://github.com/ysway/openwrt-aria2/actions" target="_blank" rel="noreferrer">GitHub Actions build logs</a></li>
             <li><a href="https://github.com/ysway/openwrt-aria2/releases" target="_blank" rel="noreferrer">Release artifacts</a></li>
             <li><a href="https://github.com/aria2/aria2" target="_blank" rel="noreferrer">Upstream aria2 project</a></li>

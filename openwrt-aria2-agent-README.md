@@ -171,6 +171,14 @@ openwrt-aria2/
 4. Third-party libraries are built as static libraries and linked into `aria2c`.
 5. UPX is a post-build optimization; skipped on incompatible targets.
 6. Each target is independently verified for linkage and runtime sanity.
+7. The packaged `/etc/init.d/aria2` and `/etc/config/aria2` should stay compatible with OpenWrt's `net/aria2/files` UCI model; adapt from the Apache-2.0 upstream files instead of maintaining a custom one-off config format.
+
+## Packaged Service Compatibility
+
+- `package/aria2-static/files/aria2.init` and `package/aria2-static/files/aria2.conf` are adapted from OpenWrt `packages/net/aria2/files`.
+- The upstream init script is Apache-2.0 licensed, which makes it a suitable source model for this repository.
+- The static package should accept the OpenWrt-style UCI keys such as `dir`, `enable_dht`, `rpc_auth_method`, `list header`, `list bt_tracker`, `list extra_settings`, and multiple `config aria2` sections.
+- Keep small migration fallbacks only where they help existing `aria2-static` installs, such as mapping legacy `download_dir` to `dir`.
 
 ---
 

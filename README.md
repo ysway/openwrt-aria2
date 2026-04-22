@@ -121,18 +121,33 @@ Use the raw binary path only if you do not want the OpenWrt package metadata, in
 
 ## Configuration
 
+The packaged init script and default UCI file are adapted from OpenWrt's
+[`packages/net/aria2/files`](https://github.com/openwrt/packages/tree/master/net/aria2/files)
+service model. That upstream `aria2.init` is published under Apache-2.0, and this
+package keeps the same `/etc/config/aria2` layout so existing OpenWrt-style aria2
+config sections can be reused with the static build.
+
 After installation, configure via UCI:
 
 ```bash
 uci set aria2.main.enabled=1
+uci set aria2.main.dir='/mnt/data/downloads'
 uci set aria2.main.rpc_secret='your-secret-here'
-uci set aria2.main.download_dir='/mnt/data/downloads'
 uci commit aria2
 /etc/init.d/aria2 enable
 /etc/init.d/aria2 start
 ```
 
-Default configuration is in `/etc/config/aria2`. The init script starts aria2 with JSON-RPC enabled on port 6800.
+Default configuration is in `/etc/config/aria2`. The service supports the OpenWrt
+project's aria2 UCI conventions, including `dir`, `enable_dht`, `rpc_auth_method`,
+`list header`, `list bt_tracker`, `list extra_settings`, and multiple `config aria2`
+sections.
+
+Generated runtime files now live under `/var/etc/aria2`, including the per-instance
+rendered config, session file, and DHT state.
+
+Legacy keys from earlier `aria2-static` packages, notably `download_dir` and
+`dht_enable`, are still accepted as compatibility fallbacks.
 
 ## Feed Notes
 
@@ -294,6 +309,7 @@ openwrt-aria2/
 
 - **[aria2](https://github.com/aria2/aria2)** — The excellent multi-protocol download utility by Tatsuhiro Tsujikawa and contributors. Licensed under GPL-2.0-or-later.
 - **[AnInsomniacy/aria2-builder](https://github.com/AnInsomniacy/aria2-builder)** — Static build recipes and cross-platform CI configuration for aria2. Used as a git submodule and build reference for this project.
+- **[openwrt/packages net/aria2](https://github.com/openwrt/packages/tree/master/net/aria2/files)** — Source model for the packaged `/etc/init.d/aria2` and `/etc/config/aria2` compatibility layer. The upstream init script is Apache-2.0 licensed.
 - **[GuNanOvO/openwrt-tailscale](https://github.com/GuNanOvO/openwrt-tailscale)** — Proven CI/CD pattern for building software inside OpenWrt SDK Docker containers. The `docker run` workflow architecture, target matrix, and release/feed strategy in this project are modeled after openwrt-tailscale.
 - **[OpenWrt](https://openwrt.org/)** — The official OpenWrt SDK Docker images (`ghcr.io/openwrt/sdk`) make cross-compilation for 33+ target architectures possible.
 
