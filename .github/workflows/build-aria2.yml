@@ -149,7 +149,7 @@ jobs:
   deploy:
     name: Deploy Feed
     needs: [build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     permissions:
       contents: write
     env:
@@ -297,7 +297,7 @@ jobs:
   release:
     name: Create Release
     needs: [build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     permissions:
       contents: write
     env:
