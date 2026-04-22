@@ -56,6 +56,50 @@ jobs:
             echo "aria2-builder updated: $OLD_TAG ($OLD_SHA) -> $NEW_TAG ($NEW_SHA)"
           fi
 
+      - name: Sync dependency versions from upstream Linux x86_64 build
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+
+          UPSTREAM_WORKFLOW="aria2-builder/.github/workflows/release.yml"
+          TARGET_FILE="build_scripts/versions.sh"
+
+          if [ ! -f "$UPSTREAM_WORKFLOW" ]; then
+            echo "ERROR: Missing upstream workflow file: $UPSTREAM_WORKFLOW" >&2
+            exit 1
+          fi
+
+          extract_from_linux_x64() {
+            pattern="$1"
+            sed -n '/^  build-linux-x64:/,/^  build-linux-arm64:/p' "$UPSTREAM_WORKFLOW" \
+              | sed -n "s#.*${pattern}#\\1#p" \
+              | head -1
+          }
+
+          ZLIB_VERSION=$(extract_from_linux_x64 'zlib/releases/download/v\([0-9.][0-9.]*\)/zlib-.*')
+          EXPAT_VERSION=$(extract_from_linux_x64 'libexpat/releases/download/R_[0-9_][0-9_]*\/expat-\([0-9.][0-9.]*\)\.tar.*')
+          SQLITE_VERSION=$(extract_from_linux_x64 'sqlite-autoconf-\([0-9][0-9]*\)\.tar\.gz')
+          CARES_VERSION=$(extract_from_linux_x64 'c-ares/releases/download/cares-[0-9_][0-9_]*\/c-ares-\([0-9.][0-9.]*\)\.tar\.gz')
+          LIBSSH2_VERSION=$(extract_from_linux_x64 'libssh2/releases/download/libssh2-\([0-9.][0-9.]*\)/libssh2-.*')
+          OPENSSL_VERSION=$(extract_from_linux_x64 'openssl/releases/download/openssl-\([0-9.][0-9.]*\)/openssl-.*')
+
+          for version_var in ZLIB_VERSION EXPAT_VERSION SQLITE_VERSION CARES_VERSION LIBSSH2_VERSION OPENSSL_VERSION; do
+            if [ -z "$(eval "printf '%s' \"\${$version_var}\"")" ]; then
+              echo "ERROR: Failed to extract $version_var from $UPSTREAM_WORKFLOW" >&2
+              exit 1
+            fi
+          done
+
+          sed -i "s/^ZLIB_VERSION=.*/ZLIB_VERSION=\"${ZLIB_VERSION}\"/" "$TARGET_FILE"
+          sed -i "s/^EXPAT_VERSION=.*/EXPAT_VERSION=\"${EXPAT_VERSION}\"/" "$TARGET_FILE"
+          sed -i "s/^SQLITE_VERSION=.*/SQLITE_VERSION=\"${SQLITE_VERSION}\"/" "$TARGET_FILE"
+          sed -i "s/^CARES_VERSION=.*/CARES_VERSION=\"${CARES_VERSION}\"/" "$TARGET_FILE"
+          sed -i "s/^LIBSSH2_VERSION=.*/LIBSSH2_VERSION=\"${LIBSSH2_VERSION}\"/" "$TARGET_FILE"
+          sed -i "s/^OPENSSL_VERSION=.*/OPENSSL_VERSION=\"${OPENSSL_VERSION}\"/" "$TARGET_FILE"
+
+          git add "$TARGET_FILE"
+          echo "Synchronized $TARGET_FILE from upstream build-linux-x64 dependency versions"
+
       - name: Commit updated gitlink
         if: steps.update.outputs.changed == 'true'
         run: |

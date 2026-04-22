@@ -1,6 +1,7 @@
 #!/bin/bash
 # Dependency versions — sourced from aria2-builder upstream
-# Keep in sync with aria2-builder/release.yml
+# Keep in sync with aria2-builder/.github/workflows/release.yml build-linux-x64,
+# which is the closest upstream example to this repo's Linux/OpenSSL/static build.
 
 ZLIB_VERSION="1.3.1"
 EXPAT_VERSION="2.5.0"
