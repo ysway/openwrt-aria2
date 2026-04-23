@@ -18,6 +18,31 @@ log_warn()  { echo "WARNING: $*" >&2; }
 log_error() { echo "ERROR: $*" >&2; }
 log_fatal() { log_error "$@"; exit 1; }
 
+resolve_tool_command() {
+    local preferred="${1:?preferred tool required}"
+    local fallback="${2:-}"
+
+    if command -v "$preferred" >/dev/null 2>&1; then
+        printf '%s' "$preferred"
+    elif [ -n "$fallback" ] && command -v "$fallback" >/dev/null 2>&1; then
+        printf '%s' "$fallback"
+    else
+        printf '%s' "$preferred"
+    fi
+}
+
+resolve_target_binutils() {
+    if [ -z "${TARGET_HOST:-}" ]; then
+        log_fatal "TARGET_HOST is not set; cannot resolve binutils"
+    fi
+
+    TARGET_AR="$(resolve_tool_command "${TARGET_HOST}-gcc-ar" "${TARGET_HOST}-ar")"
+    TARGET_RANLIB="$(resolve_tool_command "${TARGET_HOST}-gcc-ranlib" "${TARGET_HOST}-ranlib")"
+    TARGET_NM="$(resolve_tool_command "${TARGET_HOST}-gcc-nm" "${TARGET_HOST}-nm")"
+
+    export TARGET_AR TARGET_RANLIB TARGET_NM
+}
+
 resolve_extra_libs() {
     local compiler="${1:?compiler required}"
     shift || true

@@ -301,12 +301,24 @@ Managed in `build_scripts/versions.sh`:
 
 Within each SDK container, build prefix: `/work/static-prefix`.
 
+- Common compile flags for dependency and final builds: `-O2 -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -flto=auto`
+- Final `aria2c` link flags: `-static -static-libgcc -static-libstdc++ -Wl,--gc-sections -flto=auto`
+- `build_scripts/common.sh` resolves plugin-aware `TARGET_AR`, `TARGET_RANLIB`, and `TARGET_NM` so autotools-based libraries and the final `aria2` build use `gcc-ar` / `gcc-ranlib` / `gcc-nm` when LTO is enabled.
+
 - **zlib**: `--static`
 - **expat**: `--disable-shared --enable-static`
 - **c-ares**: `--disable-shared --enable-static`
 - **SQLite**: `--disable-shared --enable-static`
-- **OpenSSL**: `./Configure <target> no-shared no-module no-tests --prefix=$PREFIX --libdir=lib`
+- **OpenSSL**: `./Configure <target> no-shared no-module no-tests no-ssl3 no-dtls no-comp no-sctp no-srp --prefix=$PREFIX --libdir=lib`
 - **libssh2**: `--disable-shared --enable-static --with-crypto=openssl --with-libssl-prefix=$PREFIX`
+
+### Verified LTO / OpenSSL Caveats
+
+- Do not add `no-rc4` to the OpenSSL trim list. aria2 still exposes ARC4-backed BitTorrent MSE on the OpenSSL backend, so trimming RC4 breaks a live feature.
+- OpenSSL 3.x with `--cross-compile-prefix=${TARGET_HOST}-` prepends the host triplet to `AR`, `RANLIB`, and `NM`. Passing `${TARGET_HOST}-gcc-ar` directly causes doubled-prefix tool names.
+- The working OpenSSL LTO pattern is: keep `AR=ar RANLIB=ranlib NM=nm`, prepend a temporary PATH directory, and provide wrapper scripts named `${TARGET_HOST}-ar`, `${TARGET_HOST}-ranlib`, and `${TARGET_HOST}-nm` that `exec` the real `${TARGET_HOST}-gcc-ar`, `${TARGET_HOST}-gcc-ranlib`, and `${TARGET_HOST}-gcc-nm`.
+- Symlinks are not sufficient for those wrappers inside the OpenWrt SDK. The SDK `gcc-ar` / `gcc-ranlib` helpers depend on their original filesystem layout and fail when invoked through symlinked aliases.
+- The `lto-wrapper: warning: Extra option to '-Xassembler': --noexecstack` message observed on `aarch64_cortex-a53` comes from OpenSSL-generated assembler flags during LTO, not from repository-added compiler flags.
 
 ### aria2 Configure
 
@@ -318,10 +330,19 @@ Within each SDK container, build prefix: `/work/static-prefix`.
   --with-libcares --with-libz --with-sqlite3 --with-libssh2 \
   ARIA2_STATIC=yes \
   CPPFLAGS="-I$PREFIX/include" \
-  LDFLAGS="-L$PREFIX/lib -static -static-libgcc -static-libstdc++" \
+  LDFLAGS="-L$PREFIX/lib -static -static-libgcc -static-libstdc++ -Wl,--gc-sections -flto=auto" \
   LIBS="-lgcc_eh" \
   PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 ```
+
+### Measured Rebuilds vs Current Feed
+
+Compared against the artifacts currently published at [https://ysway.github.io/openwrt-aria2/index.html](https://ysway.github.io/openwrt-aria2/index.html):
+
+| Platform | `aria2c` | `.ipk` | `.apk` | Installed-Size |
+|---|---|---|---|---|
+| `x86_64` | `2,768,124` vs `3,386,408` bytes (`-18.26%`) | `2,772,448` vs `3,390,962` bytes (`-18.24%`) | `2,772,067` vs `3,390,577` bytes (`-18.24%`) | `2,764` vs `3,368` KB (`-17.93%`) |
+| `aarch64_cortex-a53` | `3,148,696` vs `3,377,644` bytes (`-6.78%`) | `3,153,618` vs `3,383,406` bytes (`-6.79%`) | `3,153,236` vs `3,383,018` bytes (`-6.79%`) | `3,136` vs `3,360` KB (`-6.67%`) |
 
 ---
 

@@ -189,6 +189,24 @@ All libraries are built from source as static archives inside each SDK container
 | OpenSSL | 3.4.4 | TLS 1.3, HTTPS, crypto |
 | libssh2 | 1.11.0 | SFTP support |
 
+## Build Optimization Notes
+
+- Static dependency builds and the final `aria2` build use `-O2 -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -flto=auto`.
+- The final `aria2c` link adds `-Wl,--gc-sections -flto=auto` to drop unused sections after LTO.
+- `build_scripts/common.sh` resolves plugin-aware `gcc-ar`, `gcc-ranlib`, and `gcc-nm` from the OpenWrt SDK so LTO archives remain usable across both dependency and final builds.
+- OpenSSL is trimmed conservatively with `no-ssl3 no-dtls no-comp no-sctp no-srp`.
+- RC4 stays enabled intentionally: aria2 still uses ARC4 on the OpenSSL backend for BitTorrent MSE, so `no-rc4` would remove a live feature.
+- The AArch64 `lto-wrapper: warning: Extra option to '-Xassembler': --noexecstack` message comes from OpenSSL-generated assembler flags under LTO, not from repository-added compiler flags.
+
+### Measured Size Reductions
+
+The current optimization set was verified against the artifacts currently published at [https://ysway.github.io/openwrt-aria2/index.html](https://ysway.github.io/openwrt-aria2/index.html):
+
+| Platform | `aria2c` | `.ipk` | `.apk` | Installed-Size |
+|:---|:---|:---|:---|:---|
+| `x86_64` | `2,768,124` vs `3,386,408` bytes (`-18.26%`) | `2,772,448` vs `3,390,962` bytes (`-18.24%`) | `2,772,067` vs `3,390,577` bytes (`-18.24%`) | `2,764` vs `3,368` KB (`-17.93%`) |
+| `aarch64_cortex-a53` | `3,148,696` vs `3,377,644` bytes (`-6.78%`) | `3,153,618` vs `3,383,406` bytes (`-6.79%`) | `3,153,236` vs `3,383,018` bytes (`-6.79%`) | `3,136` vs `3,360` KB (`-6.67%`) |
+
 ## Local Development
 
 ### Prerequisites

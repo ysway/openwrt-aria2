@@ -27,6 +27,8 @@ if [ -n "${EXTRA_LIBS:-}" ]; then
     EXTRA_LIBS_STRING="${EXTRA_LIBS_ARRAY[*]}"
 fi
 
+resolve_target_binutils
+
 find_config_helper() {
     local helper_name="${1:?helper name required}"
     local helper_path=""
@@ -66,6 +68,7 @@ refresh_config_helpers
 
 ARIA2_LIBS="-lgcc_eh${EXTRA_LIBS_STRING:+ $EXTRA_LIBS_STRING}"
 
+AR="$TARGET_AR" RANLIB="$TARGET_RANLIB" NM="$TARGET_NM" \
 ./configure \
     --host="$TARGET_HOST" \
     --prefix=/usr \
@@ -74,10 +77,10 @@ ARIA2_LIBS="-lgcc_eh${EXTRA_LIBS_STRING:+ $EXTRA_LIBS_STRING}"
     --without-libxml2 --with-libexpat \
     --with-libcares --with-libz --with-sqlite3 --with-libssh2 \
     ARIA2_STATIC=yes \
-    CXXFLAGS="-O2 ${EXTRA_CFLAGS:-}" \
-    CFLAGS="-O2 ${EXTRA_CFLAGS:-}" \
+    CXXFLAGS="-O2 -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -flto=auto ${EXTRA_CFLAGS:-}" \
+    CFLAGS="-O2 -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -flto=auto ${EXTRA_CFLAGS:-}" \
     CPPFLAGS="-I$PREFIX/include" \
-    LDFLAGS="-L$PREFIX/lib -static -static-libgcc -static-libstdc++" \
+    LDFLAGS="-L$PREFIX/lib -static -static-libgcc -static-libstdc++ -Wl,--gc-sections -flto=auto" \
     LIBS="$ARIA2_LIBS" \
     PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 
