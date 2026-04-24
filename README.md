@@ -60,11 +60,14 @@ GitHub Releases in this repository are tagged as `v<aria2-version>`, matching th
 
 ### Option 1: Download the matching `.ipk` from Releases (recommended for OpenWrt ≤24.10)
 
+The IPK is named `aria2-static` to avoid colliding with the official OpenWrt `aria2` package namespace. It declares `Conflicts: aria2`, so if the stock `aria2` package is already installed `opkg` will refuse the install — remove it first with `opkg remove aria2` and your `/etc/config/aria2` is preserved as a conffile.
+
 ```bash
 VERSION="<version>"
 ARCH="$(opkg print-architecture | awk 'NF==3 && $3~/^[0-9]+$/ {print $2}' | tail -1)"
 
 wget "https://github.com/ysway/openwrt-aria2/releases/download/v${VERSION}/aria2-static_${VERSION}_${ARCH}.ipk"
+opkg remove aria2 2>/dev/null || true   # only if stock aria2 is installed
 opkg install "aria2-static_${VERSION}_${ARCH}.ipk"
 ```
 
@@ -94,6 +97,7 @@ echo 'src/gz aria2-static https://ysway.github.io/openwrt-aria2/x86_64' >> /etc/
 echo 'src/gz aria2-static https://ysway.github.io/openwrt-aria2/aarch64_cortex-a53' >> /etc/opkg/customfeeds.conf
 
 opkg update
+opkg remove aria2 2>/dev/null || true   # only if stock aria2 is installed
 opkg install aria2-static
 ```
 
@@ -123,14 +127,22 @@ Use the raw binary path only if you do not want the OpenWrt package metadata, in
 
 The packaged init script and default UCI file are adapted from OpenWrt's
 [`packages/net/aria2/files`](https://github.com/openwrt/packages/tree/master/net/aria2/files)
-service model. That upstream `aria2.init` is published under Apache-2.0, and this
-package keeps the same `/etc/config/aria2` layout so existing OpenWrt-style aria2
-config sections can be reused with the static build.
+service model. The init script in this package is a near-verbatim copy of
+the upstream `aria2.init` (Apache-2.0 licensed), so any `/etc/config/aria2`
+file that works with the official `aria2` package works unchanged here.
+
+> **Important:** the default `/etc/config/aria2` ships with `option enabled '0'`,
+> so `/etc/init.d/aria2 start` will silently exit with `Instance "main" disabled.`
+> in the system log until you flip it on. If you then call
+> `/etc/init.d/aria2 restart` you will see `Command failed: Not found` because
+> procd has no live instance yet — that is also expected. Enable the instance
+> first, **then** start.
 
 After installation, configure via UCI:
 
 ```bash
-uci set aria2.main.enabled=1
+mkdir -p /mnt/data/downloads          # the dir MUST exist; the init script does NOT create it
+uci set aria2.main.enabled='1'
 uci set aria2.main.dir='/mnt/data/downloads'
 uci set aria2.main.rpc_secret='your-secret-here'
 uci commit aria2
@@ -138,16 +150,26 @@ uci commit aria2
 /etc/init.d/aria2 start
 ```
 
-Default configuration is in `/etc/config/aria2`. The service supports the OpenWrt
-project's aria2 UCI conventions, including `dir`, `enable_dht`, `rpc_auth_method`,
-`list header`, `list bt_tracker`, `list extra_settings`, and multiple `config aria2`
-sections.
+All standard procd commands are auto-provided:
 
-Generated runtime files now live under `/var/etc/aria2`, including the per-instance
+```text
+start | stop | restart | reload | enable | disable | enabled |
+running | status | trace | info
+```
+
+The init script understands every UCI option from the upstream OpenWrt aria2
+package — `dir`, `enable_dht`, `rpc_auth_method`, `rpc_secret`, `bt_tracker`,
+`list header`, `list extra_settings`, multi-section `config aria2 'name'`,
+procd jail mounts, etc. See
+[`package/aria2-static/files/aria2.init`](package/aria2-static/files/aria2.init)
+for the full schema.
+
+Generated runtime files live under `/var/etc/aria2`, including the per-instance
 rendered config, session file, and DHT state.
 
-Legacy keys from earlier `aria2-static` packages, notably `download_dir` and
-`dht_enable`, are still accepted as compatibility fallbacks.
+Legacy keys from earlier `aria2-static` packages — `download_dir` (mapped to
+`dir`) and `dht_enable` (mapped to `enable_dht`) — are still accepted as
+compatibility fallbacks.
 
 ## Feed Notes
 
@@ -327,7 +349,7 @@ openwrt-aria2/
 
 - **[aria2](https://github.com/aria2/aria2)** — The excellent multi-protocol download utility by Tatsuhiro Tsujikawa and contributors. Licensed under GPL-2.0-or-later.
 - **[AnInsomniacy/aria2-builder](https://github.com/AnInsomniacy/aria2-builder)** — Static build recipes and cross-platform CI configuration for aria2. Used as a git submodule and build reference for this project.
-- **[openwrt/packages net/aria2](https://github.com/openwrt/packages/tree/master/net/aria2/files)** — Source model for the packaged `/etc/init.d/aria2` and `/etc/config/aria2` compatibility layer. The upstream init script is Apache-2.0 licensed.
+- **[openwrt/packages net/aria2](https://github.com/openwrt/packages/tree/master/net/aria2)** — Source model for the packaged `/etc/init.d/aria2` and `/etc/config/aria2` compatibility layer. The upstream init script is Apache-2.0 licensed.
 - **[GuNanOvO/openwrt-tailscale](https://github.com/GuNanOvO/openwrt-tailscale)** — Proven CI/CD pattern for building software inside OpenWrt SDK Docker containers. The `docker run` workflow architecture, target matrix, and release/feed strategy in this project are modeled after openwrt-tailscale.
 - **[OpenWrt](https://openwrt.org/)** — The official OpenWrt SDK Docker images (`ghcr.io/openwrt/sdk`) make cross-compilation for 33+ target architectures possible.
 

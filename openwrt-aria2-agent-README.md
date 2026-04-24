@@ -175,10 +175,24 @@ openwrt-aria2/
 
 ## Packaged Service Compatibility
 
-- `package/aria2-static/files/aria2.init` and `package/aria2-static/files/aria2.conf` are adapted from OpenWrt `packages/net/aria2/files`.
-- The upstream init script is Apache-2.0 licensed, which makes it a suitable source model for this repository.
-- The static package should accept the OpenWrt-style UCI keys such as `dir`, `enable_dht`, `rpc_auth_method`, `list header`, `list bt_tracker`, `list extra_settings`, and multiple `config aria2` sections.
-- Keep small migration fallbacks only where they help existing `aria2-static` installs, such as mapping legacy `download_dir` to `dir`.
+- `package/aria2-static/files/aria2.init` is a near-verbatim copy of the upstream
+  Apache-2.0 init script from `openwrt/packages/net/aria2/files` (24.10 and 25.12
+  branches are byte-identical). The body is unchanged from upstream; the only
+  diff is a small legacy-compat shim in `aria2_start` that maps `download_dir`
+  → `dir` and `dht_enable` → `enable_dht` for users migrating from older
+  `aria2-static` configs.
+- `package/aria2-static/files/aria2.conf` is byte-identical to upstream so users
+  can drop in any official OpenWrt aria2 config and have it work unchanged.
+- All eleven standard procd subcommands (`start`/`stop`/`restart`/`reload`/
+  `enable`/`disable`/`enabled`/`running`/`status`/`trace`/`info`) are
+  auto-provided by `/etc/rc.common` + procd because `USE_PROCD=1`.
+- Default UCI config has `option enabled '0'`, exactly like upstream; users
+  must `uci set aria2.main.enabled=1` and create the download `dir` before
+  the service will start. The init script does NOT auto-create the download
+  dir (matches upstream behavior — safer for unmounted external storage).
+- `build_scripts/test_aria2_init.sh` is a procd-mock smoke test that exercises
+  the validator and `aria2_start` flow under five config states without needing
+  a router.
 
 ---
 
@@ -225,7 +239,7 @@ openwrt-aria2/
 
 3. **`release`** — GitHub Release (needs: build):
   - Download all artifacts.
-  - Rename IPKs and APKs with platform suffix.
+  - Rename IPKs and APKs with platform suffix; both formats publish as `aria2-static_<version>_<platform>.{ipk,apk}` to stay clear of the official OpenWrt `aria2` package namespace.
   - Rename raw binaries to `aria2c_<version>_<platform>` to keep release asset names unique.
   - Generate release notes markdown table (IPK + APK + binary columns).
   - Publish or refresh the GitHub Release under the upstream aria2 tag (`v<version>`) via `softprops/action-gh-release`.
@@ -243,7 +257,7 @@ Runs inside the SDK container. Steps:
 8. Run `verify_binary.sh` — linkage + functional checks.
 9. Run `pack_with_upx.sh` — conditional UPX compression.
 10. Run `collect_artifacts.sh` — BUILDINFO generation.
-11. Run `build_ipk.sh` — .ipk package assembly.
+11. Run `build_ipk.sh` — .ipk package assembly; default package name is `aria2-static` with `Conflicts: aria2` so it stays clear of the official OpenWrt `aria2` package namespace.
 12. Run `build_apk.sh` — .apk package assembly (OpenWrt 25.12+ APK v2 format).
 13. Output written to `/work/output/<platform>/`.
 

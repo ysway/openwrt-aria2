@@ -204,17 +204,12 @@ jobs:
               MD5=$(md5sum "$ipk" | awk '{print $1}')
               SHA256=$(sha256sum "$ipk" | awk '{print $1}')
               # Extract control info
-              TMPDIR=$(mktemp -d)
-              cd "$TMPDIR"
-              ar x "$OLDPWD/$ipk" control.tar.gz 2>/dev/null || true
-              if [ -f control.tar.gz ]; then
-                tar xzf control.tar.gz ./control 2>/dev/null || true
+              CONTROL_FILE=$(mktemp)
+              if tar -xOf "$ipk" ./control.tar.gz 2>/dev/null \
+                | tar -xzOf - ./control 2>/dev/null > "$CONTROL_FILE"; then
+                cat "$CONTROL_FILE" >> Packages
               fi
-              if [ -f control ]; then
-                cat control >> "$OLDPWD/Packages"
-              fi
-              rm -rf "$TMPDIR"
-              cd "$OLDPWD"
+              rm -f "$CONTROL_FILE"
               printf "Filename: %s\nSize: %s\nMD5Sum: %s\nSHA256sum: %s\n\n" \
                 "$ipk" "$SIZE" "$MD5" "$SHA256" >> Packages
             done
@@ -349,7 +344,8 @@ jobs:
             for ipk in "$arch_dir"/*.ipk; do
               [ -f "$ipk" ] || continue
               base=$(basename "$ipk")
-              new_name="aria2-static_${{ env.RELEASE_VERSION }}_${platform}.ipk"
+              pkg_name="${base%%_*}"
+              new_name="${pkg_name}_${{ env.RELEASE_VERSION }}_${platform}.ipk"
               mv "$ipk" "$arch_dir/$new_name" 2>/dev/null || true
             done
           done
@@ -414,7 +410,7 @@ jobs:
 
           full_table="${table}${rows}"
 
-          release_body="## aria2-static for OpenWrt
+          release_body="## Static aria2 for OpenWrt
           #### Version: ${RELEASE_TAG}
           #### Build Date: ${{ env.BUILD_DATE }}
           ---

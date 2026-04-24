@@ -12,6 +12,12 @@ endif
 PKG_MAINTAINER:=openwrt-aria2
 PKG_LICENSE:=GPL-2.0-or-later
 PKG_LICENSE_FILES:=COPYING
+PKG_CPE_ID:=cpe:/a:aria2_project:aria2
+
+# Mirrors the official net/aria2 Makefile flags so any in-tree rebuild
+# benefits from the same size/optimization treatment.
+PKG_BUILD_FLAGS:=gc-sections lto
+PKG_BUILD_PARALLEL:=1
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -23,6 +29,9 @@ define Package/aria2-static
   URL:=https://aria2.github.io/
   DEPENDS:=
   CONFLICTS:=aria2
+  # Same uid/gid as the official net/aria2 package so file ownership
+  # transfers cleanly between the two packages.
+  USERID:=aria2=6800:aria2=6800
 endef
 
 define Package/aria2-static/description
@@ -39,9 +48,8 @@ define Package/aria2-static/conffiles
 /etc/config/aria2
 endef
 
-# The actual binary is pre-built by the CI pipeline; this Makefile
-# is used for packaging reference only.
-
+# The actual binary is pre-built by the CI pipeline; this Makefile is
+# kept as a packaging reference and for in-tree (buildroot) reuse.
 define Build/Compile
 	@echo "aria2-static: binary is pre-built"
 endef

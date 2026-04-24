@@ -1,5 +1,5 @@
 #!/bin/sh
-# Quick installer for aria2-static on OpenWrt.
+# Quick installer for the static aria2 build on OpenWrt.
 #
 # Usage:
 #   wget -O- https://raw.githubusercontent.com/ysway/openwrt-aria2/master/setup.sh | sh
@@ -12,7 +12,7 @@ set -eu
 REPO="ysway/openwrt-aria2"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"
-TMPDIR="$(mktemp -d /tmp/aria2-static.XXXXXX)"
+TMPDIR="$(mktemp -d /tmp/aria2.XXXXXX)"
 
 cleanup() {
     rm -rf "$TMPDIR"
@@ -70,6 +70,19 @@ install_with_opkg() {
     pkg_path="$TMPDIR/$asset_name"
 
     download_asset "$asset_name" "$pkg_path"
+
+    # The aria2-static package declares `Conflicts: aria2`, so opkg refuses
+    # to install while the official aria2 package is present. Remove it
+    # first (configuration in /etc/config/aria2 is preserved by opkg's
+    # conffile handling).
+    if opkg list-installed 2>/dev/null | awk '{print $1}' | grep -qx 'aria2'; then
+        echo "Detected stock aria2 package; removing it to avoid conflict..."
+        opkg remove aria2 || {
+            echo "ERROR: Could not remove stock aria2; please remove manually" >&2
+            exit 1
+        }
+    fi
+
     echo "Installing ${asset_name} with opkg..."
     opkg install "$pkg_path"
 }

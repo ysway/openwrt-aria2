@@ -30,18 +30,12 @@ for ipk in *.ipk; do
     IPK_COUNT=$((IPK_COUNT + 1))
 
     # Extract control info
-    TMPDIR=$(mktemp -d)
-    cd "$TMPDIR"
-    ar x "$FEED_DIR/$ipk" control.tar.gz 2>/dev/null || true
-    if [ -f control.tar.gz ]; then
-        tar xzf control.tar.gz ./control 2>/dev/null || true
+    CONTROL_FILE=$(mktemp)
+    if tar -xOf "$FEED_DIR/$ipk" ./control.tar.gz 2>/dev/null \
+        | tar -xzOf - ./control 2>/dev/null > "$CONTROL_FILE"; then
+        cat "$CONTROL_FILE" >> "$PACKAGES_FILE"
     fi
-
-    if [ -f control ]; then
-        cat control >> "$PACKAGES_FILE"
-    fi
-    rm -rf "$TMPDIR"
-    cd "$FEED_DIR"
+    rm -f "$CONTROL_FILE"
 
     SIZE=$(stat -c%s "$ipk" 2>/dev/null || stat -f%z "$ipk")
     MD5=$(md5sum "$ipk" | awk '{print $1}')
