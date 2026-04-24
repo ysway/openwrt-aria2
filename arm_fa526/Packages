@@ -1,0 +1,18 @@
+Package: aria2-static
+Version: 1.37.0-1
+Architecture: arm_fa526
+Maintainer: openwrt-aria2
+Description: aria2 download utility (statically linked)
+ A lightweight multi-protocol & multi-source download utility with
+ BitTorrent, Metalink, and HTTP/HTTPS/FTP/SFTP support. This package
+ ships a statically linked binary with OpenSSL, libssh2, c-ares,
+ expat, sqlite3, and zlib embedded.
+Installed-Size: 2324480
+Section: net
+Priority: optional
+Conflicts: aria2
+Filename: aria2-static_1.37.0-1_arm_fa526.ipk
+Size: 2303712
+MD5Sum: 62c08049dbc753f877a78cba27efb3fb
+SHA256sum: 021df2db4ccd83f3764e85d346cc3c05eac18982e412f6d25f21a1d12327cde9
+

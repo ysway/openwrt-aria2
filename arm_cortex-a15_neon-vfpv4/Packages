@@ -1,0 +1,18 @@
+Package: aria2-static
+Version: 1.37.0-1
+Architecture: arm_cortex-a15_neon-vfpv4
+Maintainer: openwrt-aria2
+Description: aria2 download utility (statically linked)
+ A lightweight multi-protocol & multi-source download utility with
+ BitTorrent, Metalink, and HTTP/HTTPS/FTP/SFTP support. This package
+ ships a statically linked binary with OpenSSL, libssh2, c-ares,
+ expat, sqlite3, and zlib embedded.
+Installed-Size: 2314240
+Section: net
+Priority: optional
+Conflicts: aria2
+Filename: aria2-static_1.37.0-1_arm_cortex-a15_neon-vfpv4.ipk
+Size: 2299379
+MD5Sum: c5d9bd47d1e102ee8eb7bd54d219b53f
+SHA256sum: 90c933f28f910776fc4595d1a5c7cbced17d21349c3c4d38fe1f01e0c06b13c6
+

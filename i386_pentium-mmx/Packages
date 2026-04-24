@@ -1,0 +1,18 @@
+Package: aria2-static
+Version: 1.37.0-1
+Architecture: i386_pentium-mmx
+Maintainer: openwrt-aria2
+Description: aria2 download utility (statically linked)
+ A lightweight multi-protocol & multi-source download utility with
+ BitTorrent, Metalink, and HTTP/HTTPS/FTP/SFTP support. This package
+ ships a statically linked binary with OpenSSL, libssh2, c-ares,
+ expat, sqlite3, and zlib embedded.
+Installed-Size: 2887680
+Section: net
+Priority: optional
+Conflicts: aria2
+Filename: aria2-static_1.37.0-1_i386_pentium-mmx.ipk
+Size: 2868842
+MD5Sum: da13cff706f482594cb69b2b41cbb61c
+SHA256sum: 44b1a2188e782cee627c95a4306dfe5c8ca15bcb6242d7dadd14646f9affe824
+

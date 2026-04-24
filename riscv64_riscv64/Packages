@@ -1,0 +1,18 @@
+Package: aria2-static
+Version: 1.37.0-1
+Architecture: riscv64_riscv64
+Maintainer: openwrt-aria2
+Description: aria2 download utility (statically linked)
+ A lightweight multi-protocol & multi-source download utility with
+ BitTorrent, Metalink, and HTTP/HTTPS/FTP/SFTP support. This package
+ ships a statically linked binary with OpenSSL, libssh2, c-ares,
+ expat, sqlite3, and zlib embedded.
+Installed-Size: 6389760
+Section: net
+Priority: optional
+Conflicts: aria2
+Filename: aria2-static_1.37.0-1_riscv64_riscv64.ipk
+Size: 3499666
+MD5Sum: 3395633483bf576c66db9a7e4118445f
+SHA256sum: aaf81185c592786177bf09837c698988318035aed122aef5ebfb140b63132d80
+

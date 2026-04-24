@@ -1,0 +1,18 @@
+Package: aria2-static
+Version: 1.37.0-1
+Architecture: mips_24kc
+Maintainer: openwrt-aria2
+Description: aria2 download utility (statically linked)
+ A lightweight multi-protocol & multi-source download utility with
+ BitTorrent, Metalink, and HTTP/HTTPS/FTP/SFTP support. This package
+ ships a statically linked binary with OpenSSL, libssh2, c-ares,
+ expat, sqlite3, and zlib embedded.
+Installed-Size: 2447360
+Section: net
+Priority: optional
+Conflicts: aria2
+Filename: aria2-static_1.37.0-1_mips_24kc.ipk
+Size: 2423057
+MD5Sum: 93609c90bd893ece2d5f8eddfd5a31f0
+SHA256sum: 5f8281b7b9f6856679d8d0149136cbf16d878562131e2cbc521bac3bd03d1a40
+
