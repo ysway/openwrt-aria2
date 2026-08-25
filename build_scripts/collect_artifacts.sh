@@ -39,6 +39,10 @@ cares_version: $CARES_VERSION
 openssl_version: $OPENSSL_VERSION
 zlib_version: $ZLIB_VERSION
 libssh2_version: $LIBSSH2_VERSION
+curl_version: $CURL_VERSION
+nghttp2_version: $NGHTTP2_VERSION
+boost_version: $BOOST_VERSION
+libtorrent_version: $LIBTORRENT_VERSION
 upx_applied: $UPX_APPLIED
 fully_static: $FULLY_STATIC
 build_date: $(date -u +%Y-%m-%dT%H:%M:%SZ)

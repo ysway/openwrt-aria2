@@ -3,7 +3,7 @@
 #
 # Expects:
 #   - SDK toolchain on PATH
-#   - TARGET_HOST set
+#   - TARGET_HOST and TARGET_PROCESSOR set
 #   - PREFIX set and populated by build_deps_static.sh
 #   - ARIA2_SRC pointing to the aria2-next submodule
 
@@ -15,8 +15,9 @@ source "$SCRIPT_DIR/common.sh"
 if [ -z "${TARGET_HOST:-}" ]; then
     log_fatal "TARGET_HOST is not set; source target-map.sh and call resolve_target first"
 fi
+TARGET_PROCESSOR="${TARGET_PROCESSOR:-${TARGET_HOST%%-*}}"
 
-log_info "Building aria2-next from $ARIA2_SRC for $TARGET_HOST"
+log_info "Building aria2-next from $ARIA2_SRC for $TARGET_HOST ($TARGET_PROCESSOR)"
 
 EXTRA_LIBS_ARRAY=()
 EXTRA_LIBS_STRING=""
@@ -82,9 +83,17 @@ export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
 unset PKG_CONFIG_SYSROOT_DIR
 
+if is_truthy "${ARIA2_BUILD_TESTS:-no}"; then
+    ARIA2_CMAKE_BUILD_TESTING=ON
+else
+    ARIA2_CMAKE_BUILD_TESTING=OFF
+fi
+
 cmake -S "$ARIA2_SRC" -B "$BUILD_DIR" -G Ninja \
+    -DARIA2_SUPERBUILD=OFF \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_SYSTEM_NAME=Linux \
+    -DCMAKE_SYSTEM_PROCESSOR="$TARGET_PROCESSOR" \
     -DCMAKE_C_COMPILER="${TARGET_HOST}-gcc" \
     -DCMAKE_CXX_COMPILER="${TARGET_HOST}-g++" \
     -DCMAKE_AR="$TARGET_AR" \
@@ -104,27 +113,20 @@ cmake -S "$ARIA2_SRC" -B "$BUILD_DIR" -G Ninja \
     -DCMAKE_EXE_LINKER_FLAGS="$LINK_FLAGS" \
     -DCMAKE_C_STANDARD_LIBRARIES="$EXTRA_LIBS_STRING" \
     -DCMAKE_CXX_STANDARD_LIBRARIES="$STANDARD_LIBS_STRING" \
-    -DARIA2_ENABLE_STATIC=ON \
+    -DARIA2_DEPENDENCY_ROOT="$PREFIX" \
+    -DARIA2_BOOST_ROOT="$ARIA2_SRC/third_party/boost" \
+    -DBoost_INCLUDE_DIR="$ARIA2_SRC/third_party/boost" \
+    -DBoost_NO_BOOST_CMAKE=ON \
+    -DBOOST_ROOT="$ARIA2_SRC/third_party/boost" \
+    -DOPENSSL_ROOT_DIR="$PREFIX" \
+    -DOPENSSL_USE_STATIC_LIBS=ON \
     -DARIA2_RELEASE_SIZE_OPTIMIZED=ON \
     -DARIA2_RELEASE_LTO=ON \
-    -DARIA2_ENABLE_SSL=ON \
     -DARIA2_ENABLE_BITTORRENT=ON \
     -DARIA2_ENABLE_METALINK=ON \
     -DARIA2_ENABLE_WEBSOCKET=ON \
-    -DARIA2_WITH_ZLIB=ON \
-    -DARIA2_WITH_LIBXML2=OFF \
-    -DARIA2_WITH_EXPAT=ON \
-    -DARIA2_WITH_SQLITE3=ON \
-    -DARIA2_WITH_CARES=ON \
-    -DARIA2_WITH_LIBSSH2=ON \
-    -DARIA2_WITH_OPENSSL=ON \
-    -DARIA2_WITH_GNUTLS=OFF \
-    -DARIA2_WITH_LIBNETTLE=OFF \
-    -DARIA2_WITH_GMP=OFF \
-    -DARIA2_WITH_LIBGCRYPT=OFF \
-    -DARIA2_WITH_LIBUV=OFF \
-    -DARIA2_WITH_TCMALLOC=OFF \
-    -DARIA2_WITH_JEMALLOC=OFF \
+    -DARIA2_ENABLE_LIBARIA2=OFF \
+    -DBUILD_TESTING="$ARIA2_CMAKE_BUILD_TESTING" \
     -DARIA2_BASH_COMPLETION_DIR=share/bash-completion/completions
 
 BUILD_TARGETS=(aria2-next)

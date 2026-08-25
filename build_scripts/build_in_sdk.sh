@@ -62,10 +62,11 @@ if [ -n "$DETECTED_HOST" ]; then
     if [ "$DETECTED_HOST" != "$TARGET_HOST" ]; then
         log_info "Auto-detected host triple: $DETECTED_HOST (overriding mapped: $TARGET_HOST)"
         TARGET_HOST="$DETECTED_HOST"
-        export TARGET_HOST
     fi
 fi
-log_info "Target: HOST=$TARGET_HOST SSL=$OPENSSL_TARGET UPX_SKIP=$UPX_SKIP"
+TARGET_PROCESSOR="${TARGET_HOST%%-*}"
+export TARGET_HOST TARGET_PROCESSOR
+log_info "Target: HOST=$TARGET_HOST PROCESSOR=$TARGET_PROCESSOR SSL=$OPENSSL_TARGET UPX_SKIP=$UPX_SKIP"
 
 # ── Build static dependencies ──────────────────────────────────────────────
 export PREFIX=/work/static-prefix

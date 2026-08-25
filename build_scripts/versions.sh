@@ -1,7 +1,7 @@
 #!/bin/bash
-# Dependency versions — sourced from aria2-next upstream.
-# Keep this file aligned with aria2-next/packaging/dependencies.env. This repo
-# uses the OpenWrt/Linux subset of the maintained release baseline.
+# Dependency versions align with the aria2-next upstream baseline. Download
+# URLs and SHA-256 hashes are maintained here because upstream vendors its
+# dependency sources and no longer publishes that metadata in dependencies.env.
 
 ZLIB_VERSION="1.3.2"
 ZLIB_ARCHIVE="zlib-1.3.2.tar.gz"
@@ -31,6 +31,11 @@ LIBSSH2_VERSION="1.11.1"
 LIBSSH2_ARCHIVE="libssh2-1.11.1.tar.bz2"
 LIBSSH2_URL="https://github.com/libssh2/libssh2/releases/download/libssh2-1.11.1/libssh2-1.11.1.tar.bz2"
 LIBSSH2_SHA256="8ddbd698403a2c3a9987df48f2940c6f6a9bddce28d37eb201938dd7755646f0"
+
+CURL_VERSION="8.21.0"
+NGHTTP2_VERSION="1.70.0"
+BOOST_VERSION="1.91.0"
+LIBTORRENT_VERSION="2.1.1"
 
 OPENSSL_VERSION="3.5.6"
 OPENSSL_SERIES="3.5"

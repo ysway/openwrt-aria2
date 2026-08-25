@@ -11,7 +11,7 @@ This repository owns the OpenWrt build, packaging, service integration, release,
 ## Features
 
 - **Self-contained binaries** — target libraries are linked statically to avoid firmware package dependency conflicts
-- **Broad protocol support** — HTTP(S), FTP, SFTP, BitTorrent, Metalink, XML-RPC, WebSocket RPC, and ED2K
+- **Broad protocol support** — HTTP(S), SFTP, BitTorrent, Metalink, XML-RPC, WebSocket RPC, and ED2K
 - **OpenSSL backend** — TLS support with static OpenSSL, plus c-ares async DNS
 - **33 OpenWrt target architectures** — built with official OpenWrt SDK Docker images
 - **Dual package format** — `.ipk` for OPKG-based OpenWrt and standalone `.apk` for APK-based OpenWrt
@@ -70,7 +70,7 @@ wget -O- https://raw.githubusercontent.com/ysway/openwrt-aria2-next/master/setup
 For an auditable install, download `setup.sh`, inspect it, then run it. Optional overrides include:
 
 ```sh
-ARIA2_RELEASE_TAG=v2.5.2 ARIA2_ARCH=x86_64 sh setup.sh
+ARIA2_RELEASE_TAG=v2.6.0 ARIA2_ARCH=x86_64 sh setup.sh
 ARIA2_INSTALL_MODE=raw sh setup.sh
 ARIA2_REPO=owner/fork sh setup.sh
 ```
@@ -82,7 +82,7 @@ ARIA2_REPO=owner/fork sh setup.sh
 Use this on OPKG-based OpenWrt:
 
 ```sh
-VERSION=2.5.2
+VERSION=2.6.0
 TAG="v${VERSION}"
 ARCH=x86_64
 
@@ -97,7 +97,7 @@ Replace the example version and architecture with values from the [latest releas
 Use this on APK-based OpenWrt:
 
 ```sh
-VERSION=2.5.2
+VERSION=2.6.0
 TAG="v${VERSION}"
 ARCH=x86_64
 
@@ -124,7 +124,7 @@ The site root is a landing page. The architecture suffix is required in the feed
 ### Option 5: Install the raw binary
 
 ```sh
-VERSION=2.5.2
+VERSION=2.6.0
 TAG="v${VERSION}"
 ARCH=x86_64
 
@@ -161,10 +161,10 @@ Useful paths:
 | `/usr/bin/aria2-next` | Static downloader binary |
 | `/etc/init.d/aria2-next` | procd service |
 | `/etc/config/aria2-next` | UCI configuration |
-| `/var/etc/aria2-next` | Rendered runtime config, session, and DHT state by default |
+| `/var/etc/aria2-next` | Rendered runtime config, session, and per-instance engine state by default |
 | `/mnt/sda1/aria2-next` | Download directory in the packaged sample config |
 
-The UCI section type remains `config aria2` to match OpenWrt's official schema. Existing `/etc/config/aria2` files can usually be reused by copying them to `/etc/config/aria2-next`. The service also accepts the older `download_dir` and `dht_enable` keys.
+The UCI section type remains `config aria2` to match OpenWrt's official schema. Existing `/etc/config/aria2` files can usually be reused by copying them to `/etc/config/aria2-next`. The service also accepts the older `download_dir` and `dht_enable` keys. aria2-next 2.6 removed RPC username/password authentication; configurations using `rpc_user`, `rpc_passwd`, or `rpc_auth_method='user_pass'` must migrate to `rpc_auth_method='token'` with a non-empty `rpc_secret`. The service fails closed instead of starting those legacy configurations without authentication.
 
 ## Feed Notes
 
@@ -181,7 +181,7 @@ The UCI section type remains `config aria2` to match OpenWrt's official schema. 
 ```text
 sync-upstream.yml (daily or manual)
   └─ Find the newest aria2-next v* tag
-  └─ Update the submodule and dependency pins
+  └─ Verify the local dependency baseline and update the submodule
   └─ Dispatch build-aria2.yml
        │
        ▼
@@ -209,7 +209,7 @@ Scheduled upstream builds publish automatically. Manual workflow runs are safe p
 
 ### Static dependencies
 
-Versions, URLs, and SHA-256 hashes are pinned in [`build_scripts/versions.sh`](build_scripts/versions.sh) and track the upstream [`aria2-next/packaging/dependencies.env`](aria2-next/packaging/dependencies.env) baseline.
+Dependency versions in [`build_scripts/versions.sh`](build_scripts/versions.sh) track the upstream [`aria2-next/packaging/dependencies.env`](aria2-next/packaging/dependencies.env) baseline. Download URLs and SHA-256 hashes are pinned locally because current upstream releases vendor their dependency sources instead of publishing download metadata.
 
 | Library | Version | Purpose |
 |:---|:---|:---|
@@ -219,8 +219,12 @@ Versions, URLs, and SHA-256 hashes are pinned in [`build_scripts/versions.sh`](b
 | c-ares | 1.34.5 | Async DNS |
 | OpenSSL | 3.5.6 | TLS and cryptography |
 | libssh2 | 1.11.1 | SFTP |
+| curl | 8.21.0 | HTTP(S) and SFTP transfer engine |
+| nghttp2 | 1.70.0 | HTTP/2 framing for curl |
+| Boost | 1.91.0 | Headers used by libtorrent |
+| libtorrent-rasterbar | 2.1.1 | BitTorrent engine |
 
-Builds keep the OpenSSL ARC4 implementation because aria2's BitTorrent MSE path still depends on it. Unused GnuTLS, nettle, GMP, libgcrypt, libuv, libxml2, jemalloc, and tcmalloc paths are disabled.
+FTP was removed upstream in aria2-next 2.6.0. BitTorrent encryption is provided by aria2-next and libtorrent's maintained implementations. Unused GnuTLS, nettle, GMP, libgcrypt, libuv, libxml2, jemalloc, and tcmalloc paths are disabled.
 
 ## Local Development
 
@@ -286,7 +290,7 @@ files to globally unique asset names without changing their internal versions.
 | `sdk_version` | target default | Manual workflow SDK override |
 | `publish` | `false` | Allows a complete manual matrix to update the feed and release |
 
-The upstream CMake project currently defines its test target unconditionally. Release builds therefore request the `aria2-next` target explicitly; using CMake's default `all` target would compile a large test executable 33 times without running it.
+Release builds configure upstream with `BUILD_TESTING=OFF` and request the `aria2-next` target explicitly. Setting `ARIA2_BUILD_TESTS=yes` enables and compiles `aria2_tests`; most cross-target executables still require target hardware or emulation to run.
 
 ### Build scripts overview
 

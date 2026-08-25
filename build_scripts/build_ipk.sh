@@ -88,9 +88,9 @@ Architecture: $PKG_ARCH
 Maintainer: openwrt-aria2-next
 Description: aria2-next download utility (statically linked)
  A maintained aria2-compatible download utility with ED2K, BitTorrent,
- Metalink, and HTTP/HTTPS/FTP/SFTP support. This package ships a
- statically linked aria2-next binary with Expat, SQLite, c-ares,
- OpenSSL, libssh2, and zlib embedded.
+ Metalink, and HTTP/HTTPS/SFTP support. This package ships a statically
+ linked aria2-next binary with Expat, SQLite, c-ares, OpenSSL, libssh2,
+ zlib, curl, nghttp2, and libtorrent embedded.
 Installed-Size: $INSTALLED_SIZE
 Section: net
 Priority: optional

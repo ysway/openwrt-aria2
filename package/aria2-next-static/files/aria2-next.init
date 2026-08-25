@@ -7,11 +7,11 @@
 # remains compatible with upstream aria2 configs; copy /etc/config/aria2 to
 # /etc/config/aria2-next to reuse an existing configuration with aria2-next.
 #
-# Two small additions for legacy aria2-static deployments:
+# Compatibility additions for aria2-static deployments:
 #   - 'download_dir' is accepted as a synonym for 'dir'.
 #   - 'dht_enable'  is accepted as a synonym for 'enable_dht'.
-# Both fallbacks are applied early in aria2_start; the rest of the script
-# is unchanged.
+#   - Persistent engine state is kept below each instance's config directory.
+#   - Removed username/password RPC authentication fails closed.
 #
 # All standard procd/rc.common subcommands are auto-provided:
 #   start | stop | restart | reload | enable | disable | enabled |
@@ -129,7 +129,7 @@ aria2_validate() {
 		'dir:string' \
 		'disable_ipv6:or("true","false")' \
 		'disk_cache:string' \
-		'enable_dht:or("true","false"):true' \
+		'enable_dht:or("true","false")' \
 		'enable_dht6:or("true","false")' \
 		'enable_peer_exchange:or("true","false")' \
 		'event_poll:or("epoll","kqueue","port","poll","select")' \
@@ -183,18 +183,30 @@ aria2_start() {
 	# is unset. This keeps existing /etc/config/aria2 files working
 	# without any user action.
 	[ -n "$dir" ] || dir="$download_dir"
-	[ -n "$enable_dht" ] || enable_dht="$dht_enable"
+	if [ -z "$enable_dht" ]; then
+		enable_dht="${dht_enable:-true}"
+	fi
 
 	[ "$enabled" = "1" ] || { _info "Instance \"$section\" disabled."; return 1; }
 	[ -n "$dir" ] || { _err "Please set download dir."; return 1; }
 	[ -d "$dir" ] || { _err "Please create download dir first."; return 1; }
 
+	if [ "$rpc_auth_method" = "user_pass" ] || [ -n "$rpc_user" ] || [ -n "$rpc_passwd" ]; then
+		_err "RPC username/password authentication is no longer supported; configure token authentication with rpc_secret."
+		return 1
+	fi
+	if [ "$rpc_auth_method" = "token" ] && [ -z "$rpc_secret" ]; then
+		_err "RPC token authentication requires rpc_secret."
+		return 1
+	fi
+
 	config_file="$config_dir/$NAME.conf.$section"
 	config_file_tmp="$config_dir/$NAME.conf.tmp"
 	session_file="$config_dir/$NAME.session.$section"
+	state_dir="$config_dir/state.$section"
 
-	_make_dir "$config_dir" || {
-		_err "Can't create config dir: $config_dir"
+	_make_dir "$config_dir" "$state_dir" || {
+		_err "Can't create config or state dir: $config_dir, $state_dir"
 		return 1
 	}
 
@@ -216,6 +228,7 @@ aria2_start() {
 	append_setting "continue=true"
 	append_setting "input-file=$session_file"
 	append_setting "save-session=$session_file"
+	append_setting "state-dir=$state_dir"
 
 	if [ -z "$enable_logging" ]; then
 		append_options "log" "log_level"
@@ -241,36 +254,14 @@ aria2_start() {
 		append_options "all_proxy" "all_proxy_user" "all_proxy_passwd"
 	fi
 
-	unset_auth_method() {
-		uci -q batch <<-EOF
-			set $NAME.$section.rpc_auth_method=""
-			commit $NAME
-		EOF
-	}
-
 	if [ -z "$rpc_auth_method" ]; then
 		if [ -n "$rpc_secret" ]; then
 			append_setting "rpc-secret=$rpc_secret"
-		elif [ -n "$rpc_user" ]; then
-			append_setting "rpc-user=$rpc_user"
-			append_setting "rpc-passwd=$rpc_passwd"
 		else
 			_info "It is recommended to set RPC secret."
 		fi
 	elif [ "$rpc_auth_method" = "token" ]; then
-		if [ -n "$rpc_secret" ]; then
-			append_setting "rpc-secret=$rpc_secret"
-		else
-			unset_auth_method
-		fi
-	elif [ "$rpc_auth_method" = "user_pass" ]; then
-		if [ -n "$rpc_user" ]; then
-			append_setting "rpc-user=$rpc_user"
-			append_setting "rpc-passwd=$rpc_passwd"
-		else
-			_info "Please set RPC user."
-			unset_auth_method
-		fi
+		append_setting "rpc-secret=$rpc_secret"
 	fi
 
 	if [ ."$rpc_secure" = ."true" ] && [ -n "$rpc_certificate" ]; then
@@ -285,26 +276,12 @@ aria2_start() {
 		append_setting "check-certificate=false"
 	fi
 
-	if [ ."$enable_dht" = ."true" ]; then
-		dht_file="$config_dir/dht.dat.$section"
-		_create_file "$dht_file" || {
-			_err "Can't create DHT file: $dht_file"
-			return 1
-		}
-
-		append_setting "enable-dht=true"
-		append_setting "dht-file-path=$dht_file"
+	if [ -n "$enable_dht" ]; then
+		append_setting "enable-dht=$enable_dht"
 	fi
 
 	if [ ."$enable_dht6" = ."true" ] && [ ."$disable_ipv6" != ."true" ]; then
-		dht6_file="$config_dir/dht6.dat.$section"
-		_create_file "$dht6_file" || {
-			_err "Can't create DHT6 file: $dht6_file"
-			return 1
-		}
-
 		append_setting "enable-dht6=true"
-		append_setting "dht-file-path6=$dht6_file"
 	fi
 
 	if [ -n "$bt_tracker" ]; then

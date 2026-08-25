@@ -8,6 +8,7 @@
 #
 # After resolve_target, the following variables are exported:
 #   TARGET_HOST        – GNU host triple for --host=
+#   TARGET_PROCESSOR   – processor component used by cross-CMake builds
 #   OPENSSL_TARGET     – OpenSSL ./Configure target
 #   EXTRA_CFLAGS       – any target-specific CFLAGS
 #   UPX_SKIP           – "yes" if UPX should be skipped for this target
@@ -91,5 +92,6 @@ resolve_target() {
             ;;
     esac
 
-    export TARGET_HOST OPENSSL_TARGET EXTRA_CFLAGS EXTRA_LIBS UPX_SKIP
+    TARGET_PROCESSOR="${TARGET_HOST%%-*}"
+    export TARGET_HOST TARGET_PROCESSOR OPENSSL_TARGET EXTRA_CFLAGS EXTRA_LIBS UPX_SKIP
 }

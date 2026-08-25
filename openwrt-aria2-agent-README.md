@@ -24,6 +24,10 @@ Current dependency pins:
 | SQLite | 3.53.1 |
 | c-ares | 1.34.5 |
 | libssh2 | 1.11.1 |
+| curl | 8.21.0 |
+| nghttp2 | 1.70.0 |
+| Boost | 1.91.0 |
+| libtorrent-rasterbar | 2.1.1 |
 | OpenSSL | 3.5.6 |
 
 ## OpenWrt Packaging Surface
@@ -69,11 +73,13 @@ docker run --rm --user root \
 - `build_scripts/build_static_aria2.sh` configures aria2-next with CMake/Ninja.
 - Release builds request the `aria2-next` target explicitly. Set
   `ARIA2_BUILD_TESTS=yes` only when the cross-built test executable is needed.
-- Dependency archives are accepted only after matching the SHA-256 values in
-  `build_scripts/versions.sh`.
+- Downloaded dependency archives are accepted only after matching the SHA-256
+  values in `build_scripts/versions.sh`; the remaining dependencies use sources
+  vendored by the pinned aria2-next submodule.
 - Preserve OpenSSL `gcc-ar`, `gcc-ranlib`, and `gcc-nm` wrappers for LTO.
-- Preserve OpenSSL RC4 support because aria2 uses ARC4 for BitTorrent MSE.
-- The CMake build enables OpenSSL, zlib, expat, SQLite3, c-ares, libssh2, BitTorrent, Metalink, XML-RPC, and WebSocket support.
+- The CMake build enables OpenSSL, zlib, expat, SQLite3, c-ares, libssh2,
+  curl, nghttp2, libtorrent, BitTorrent, Metalink, XML-RPC, and WebSocket
+  support. Boost headers come from the upstream vendored dependency tree.
 - The local OpenWrt profile explicitly disables GnuTLS, nettle, GMP, libgcrypt, libuv, libxml2, jemalloc, and tcmalloc.
 
 ## Package Format Lessons

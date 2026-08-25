@@ -3,7 +3,8 @@
 #
 # Expects:
 #   - SDK toolchain on PATH (CC, CXX, AR, RANLIB set or discoverable)
-#   - TARGET_HOST, OPENSSL_TARGET, EXTRA_CFLAGS set (via target-map.sh)
+#   - TARGET_HOST, TARGET_PROCESSOR, OPENSSL_TARGET, EXTRA_CFLAGS set
+#     (via target-map.sh)
 #   - PREFIX set (via common.sh)
 #   - versions.sh sourced
 #
@@ -20,8 +21,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 source "$SCRIPT_DIR/versions.sh"
 
+if [ -z "${TARGET_HOST:-}" ]; then
+    log_fatal "TARGET_HOST is not set; source target-map.sh and call resolve_target first"
+fi
+TARGET_PROCESSOR="${TARGET_PROCESSOR:-${TARGET_HOST%%-*}}"
+
 SRC_DIR="$SOURCE_CACHE_DIR"
+VENDOR_DIR="$ARIA2_SRC/third_party"
 ensure_dir "$SRC_DIR" "$PREFIX"
+
+for vendored_dependency in nghttp2 curl libtorrent boost; do
+    if [ ! -d "$VENDOR_DIR/$vendored_dependency" ]; then
+        log_fatal "Vendored dependency source is missing: $VENDOR_DIR/$vendored_dependency"
+    fi
+done
 
 # Section-splitting lets the linker drop unused functions/data from static
 # archives via --gc-sections. -fno-asynchronous-unwind-tables trims .eh_frame
@@ -82,6 +95,9 @@ COMMON_CMAKE_ARGS=(
     -G Ninja
     -DCMAKE_BUILD_TYPE=Release
     -DCMAKE_SYSTEM_NAME=Linux
+    -DCMAKE_SYSTEM_PROCESSOR="$TARGET_PROCESSOR"
+    -DCMAKE_INSTALL_LIBDIR=lib
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DCMAKE_C_COMPILER="${TARGET_HOST}-gcc"
     -DCMAKE_CXX_COMPILER="${TARGET_HOST}-g++"
     -DCMAKE_AR="$TARGET_AR"
@@ -190,7 +206,6 @@ openssl_configure_args=(
     no-apps
     no-tests
     # Keep trims to protocol/features aria2 disables or never exposes.
-    # RC4 must stay enabled because aria2 uses OpenSSL's ARC4 for BitTorrent MSE.
     no-ssl3 no-dtls no-comp no-sctp no-srp
     --cross-compile-prefix="${TARGET_HOST}-"
     --prefix="$PREFIX"
@@ -200,7 +215,10 @@ openssl_configure_args=(
 )
 PATH="$OPENSSL_TOOL_WRAPPER_DIR:$PATH" AR=ar RANLIB=ranlib NM=nm \
 ./Configure "${openssl_configure_args[@]}"
-PATH="$OPENSSL_TOOL_WRAPPER_DIR:$PATH" make -j"$NPROC"
+if ! PATH="$OPENSSL_TOOL_WRAPPER_DIR:$PATH" make -j"$NPROC"; then
+    log_warn "OpenSSL build failed; retrying once in case its generated Makefile was refreshed"
+    PATH="$OPENSSL_TOOL_WRAPPER_DIR:$PATH" make -j"$NPROC"
+fi
 PATH="$OPENSSL_TOOL_WRAPPER_DIR:$PATH" make install_sw
 
 # ── libssh2 ────────────────────────────────────────────────────────────────
@@ -232,5 +250,139 @@ cmake -S "libssh2-${LIBSSH2_VERSION}" -B build/libssh2-release \
     -DCMAKE_EXE_LINKER_FLAGS="$COMMON_LINK_FLAGS"
 cmake --build build/libssh2-release -j"$NPROC"
 cmake --install build/libssh2-release
+
+# ── nghttp2 ────────────────────────────────────────────────────────────────────
+log_info "Building vendored nghttp2 ${NGHTTP2_VERSION}"
+cd "$BUILDDIR"
+rm -rf build/nghttp2-release
+cmake -S "$VENDOR_DIR/nghttp2" -B build/nghttp2-release \
+    "${COMMON_CMAKE_ARGS[@]}" \
+    -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+    -DCMAKE_MODULE_LINKER_FLAGS="$COMMON_LINK_FLAGS" \
+    -DCMAKE_SHARED_LINKER_FLAGS="$COMMON_LINK_FLAGS" \
+    -DENABLE_LIB_ONLY=ON \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DBUILD_STATIC_LIBS=ON \
+    -DBUILD_TESTING=OFF \
+    -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=TRUE \
+    -DCMAKE_DISABLE_FIND_PACKAGE_Libngtcp2=TRUE \
+    -DCMAKE_DISABLE_FIND_PACKAGE_Libnghttp3=TRUE \
+    -DCMAKE_DISABLE_FIND_PACKAGE_Systemd=TRUE \
+    -DCMAKE_DISABLE_FIND_PACKAGE_Jansson=TRUE \
+    -DCMAKE_DISABLE_FIND_PACKAGE_Libevent=TRUE \
+    -DCMAKE_DISABLE_FIND_PACKAGE_LibXml2=TRUE \
+    -DCMAKE_DISABLE_FIND_PACKAGE_Jemalloc=TRUE \
+    -DCMAKE_C_FLAGS="$COMMON_CFLAGS" \
+    -DCMAKE_CXX_FLAGS="$COMMON_CXXFLAGS" \
+    -DCMAKE_EXE_LINKER_FLAGS="$COMMON_LINK_FLAGS"
+cmake --build build/nghttp2-release -j"$NPROC"
+cmake --install build/nghttp2-release
+
+# ── curl ───────────────────────────────────────────────────────────────────────
+log_info "Building vendored curl ${CURL_VERSION}"
+cd "$BUILDDIR"
+rm -rf build/curl-release
+cmake -S "$VENDOR_DIR/curl" -B build/curl-release \
+    "${COMMON_CMAKE_ARGS[@]}" \
+    -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+    -DCMAKE_MODULE_LINKER_FLAGS="$COMMON_LINK_FLAGS" \
+    -DCMAKE_SHARED_LINKER_FLAGS="$COMMON_LINK_FLAGS" \
+    -DBUILD_CURL_EXE=OFF \
+    -DBUILD_EXAMPLES=OFF \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DBUILD_STATIC_LIBS=ON \
+    -DBUILD_TESTING=OFF \
+    -DCMAKE_DISABLE_FIND_PACKAGE_Perl=TRUE \
+    -DCURL_DISABLE_INSTALL=OFF \
+    -DCURL_USE_PKGCONFIG=OFF \
+    -DCURL_USE_CMAKECONFIG=OFF \
+    -DENABLE_ARES=ON \
+    -DCARES_USE_STATIC_LIBS=ON \
+    -DCARES_INCLUDE_DIR="$PREFIX/include" \
+    -DCARES_LIBRARY="$PREFIX/lib/libcares.a" \
+    -DCURL_USE_LIBSSH2=ON \
+    -DLIBSSH2_USE_STATIC_LIBS=ON \
+    -DLIBSSH2_INCLUDE_DIR="$PREFIX/include" \
+    -DLIBSSH2_LIBRARY="$PREFIX/lib/libssh2.a" \
+    -DUSE_NGHTTP2=ON \
+    -DNGHTTP2_USE_STATIC_LIBS=ON \
+    -DNGHTTP2_INCLUDE_DIR="$PREFIX/include" \
+    -DNGHTTP2_LIBRARY="$PREFIX/lib/libnghttp2.a" \
+    -DCURL_ZLIB=ON \
+    -DZLIB_ROOT="$PREFIX" \
+    -DZLIB_USE_STATIC_LIBS=ON \
+    -DZLIB_INCLUDE_DIR="$PREFIX/include" \
+    -DZLIB_LIBRARY="$PREFIX/lib/libz.a" \
+    -DCURL_BROTLI=OFF \
+    -DCURL_ZSTD=OFF \
+    -DUSE_LIBIDN2=OFF \
+    -DCURL_DISABLE_ALTSVC=ON \
+    -DCURL_DISABLE_AWS=ON \
+    -DCURL_DISABLE_DICT=ON \
+    -DCURL_DISABLE_DOH=ON \
+    -DCURL_DISABLE_FILE=ON \
+    -DCURL_DISABLE_FTP=ON \
+    -DCURL_DISABLE_GOPHER=ON \
+    -DCURL_DISABLE_HSTS=ON \
+    -DCURL_DISABLE_IMAP=ON \
+    -DCURL_DISABLE_IPFS=ON \
+    -DCURL_DISABLE_LDAP=ON \
+    -DCURL_DISABLE_LDAPS=ON \
+    -DCURL_DISABLE_MQTT=ON \
+    -DCURL_DISABLE_NETRC=OFF \
+    -DCURL_DISABLE_POP3=ON \
+    -DCURL_DISABLE_RTSP=ON \
+    -DCURL_DISABLE_SMTP=ON \
+    -DCURL_DISABLE_TELNET=ON \
+    -DCURL_DISABLE_TFTP=ON \
+    -DCURL_DISABLE_WEBSOCKETS=ON \
+    -DCURL_USE_LIBPSL=OFF \
+    -DCURL_USE_GSSAPI=OFF \
+    -DCURL_USE_OPENSSL=ON \
+    -DOPENSSL_ROOT_DIR="$PREFIX" \
+    -DOPENSSL_USE_STATIC_LIBS=ON \
+    -DOPENSSL_INCLUDE_DIR="$PREFIX/include" \
+    -DOPENSSL_CRYPTO_LIBRARY="$PREFIX/lib/libcrypto.a" \
+    -DOPENSSL_SSL_LIBRARY="$PREFIX/lib/libssl.a" \
+    -DCMAKE_C_FLAGS="$COMMON_CFLAGS" \
+    -DCMAKE_EXE_LINKER_FLAGS="$COMMON_LINK_FLAGS"
+cmake --build build/curl-release -j"$NPROC"
+cmake --install build/curl-release
+
+# ── libtorrent-rasterbar ──────────────────────────────────────────────────
+log_info "Building vendored libtorrent-rasterbar ${LIBTORRENT_VERSION}"
+cd "$BUILDDIR"
+rm -rf build/libtorrent-rasterbar-release
+cmake -S "$VENDOR_DIR/libtorrent" -B build/libtorrent-rasterbar-release \
+    "${COMMON_CMAKE_ARGS[@]}" \
+    -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+    -DCMAKE_MODULE_LINKER_FLAGS="$COMMON_LINK_FLAGS" \
+    -DCMAKE_SHARED_LINKER_FLAGS="$COMMON_LINK_FLAGS" \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DBoost_INCLUDE_DIR="$VENDOR_DIR/boost" \
+    -DBoost_NO_BOOST_CMAKE=ON \
+    -DOPENSSL_ROOT_DIR="$PREFIX" \
+    -DOPENSSL_USE_STATIC_LIBS=ON \
+    -DOPENSSL_INCLUDE_DIR="$PREFIX/include" \
+    -DOPENSSL_CRYPTO_LIBRARY="$PREFIX/lib/libcrypto.a" \
+    -DOPENSSL_SSL_LIBRARY="$PREFIX/lib/libssl.a" \
+    -Dbuild_tests=OFF \
+    -Dbuild_examples=OFF \
+    -Dbuild_tools=OFF \
+    -Dpython-bindings=OFF \
+    -Ddeprecated-functions=OFF \
+    -Dextensions=ON \
+    -Dmutable-torrents=ON \
+    -Dstreaming=ON \
+    -Di2p=OFF \
+    -Dwebtorrent=OFF \
+    -Dlogging=OFF \
+    -Dencryption=ON \
+    -Ddht=ON \
+    -DCMAKE_C_FLAGS="$COMMON_CFLAGS" \
+    -DCMAKE_CXX_FLAGS="$COMMON_CXXFLAGS" \
+    -DCMAKE_EXE_LINKER_FLAGS="$COMMON_LINK_FLAGS"
+cmake --build build/libtorrent-rasterbar-release -j"$NPROC"
+cmake --install build/libtorrent-rasterbar-release
 
 log_info "All static dependencies built successfully in $PREFIX"

@@ -64,7 +64,7 @@ jobs:
             echo "aria2-next updated: $OLD_REF ($OLD_SHA) -> $NEW_REF ($NEW_SHA)"
           fi
 
-      - name: Sync dependency versions from upstream baseline
+      - name: Verify dependency versions against upstream baseline
         if: steps.update.outputs.changed == 'true'
         run: |
           set -euo pipefail
@@ -80,51 +80,47 @@ jobs:
           # shellcheck source=/dev/null
           . "$UPSTREAM_DEPS"
 
-          for version_var in ZLIB_VERSION ZLIB_ARCHIVE ZLIB_URL ZLIB_SHA256 EXPAT_VERSION EXPAT_TAG EXPAT_ARCHIVE EXPAT_URL EXPAT_SHA256 SQLITE_AUTOCONF_VERSION SQLITE_VERSION SQLITE_YEAR SQLITE_ARCHIVE SQLITE_URL SQLITE_SHA256 CARES_VERSION CARES_TAG CARES_ARCHIVE CARES_URL CARES_SHA256 LIBSSH2_VERSION LIBSSH2_ARCHIVE LIBSSH2_URL LIBSSH2_SHA256 OPENSSL_VERSION OPENSSL_SERIES OPENSSL_ARCHIVE OPENSSL_URL OPENSSL_SHA256; do
-            if [ -z "$(eval "printf '%s' \"\${$version_var}\"")" ]; then
+          version_vars=(
+            ZLIB_VERSION
+            EXPAT_VERSION
+            SQLITE_VERSION
+            CARES_VERSION
+            LIBSSH2_VERSION
+            CURL_VERSION
+            NGHTTP2_VERSION
+            OPENSSL_VERSION
+            BOOST_VERSION
+            LIBTORRENT_VERSION
+          )
+          declare -A upstream_versions=()
+
+          for version_var in "${version_vars[@]}"; do
+            if [ -z "${!version_var:-}" ]; then
               echo "ERROR: Failed to extract $version_var from $UPSTREAM_DEPS" >&2
+              exit 1
+            fi
+            upstream_versions["$version_var"]="${!version_var}"
+          done
+
+          # Upstream vendors dependency sources as of v2.6.0, so its baseline
+          # no longer provides the archives, URLs, or hashes needed by our
+          # OpenWrt cross-build. Keep that download metadata pinned locally and
+          # require a reviewed local baseline update when a version diverges.
+          # shellcheck source=/dev/null
+          . "$TARGET_FILE"
+
+          for version_var in "${version_vars[@]}"; do
+            target_version="${!version_var:-}"
+            if [ "$target_version" != "${upstream_versions[$version_var]}" ]; then
+              echo "ERROR: Dependency version mismatch for $version_var" >&2
+              echo "  upstream: ${upstream_versions[$version_var]}" >&2
+              echo "  local:    ${target_version:-<missing>}" >&2
+              echo "Review the new baseline and update $TARGET_FILE and any download metadata." >&2
               exit 1
             fi
           done
 
-          update_assignment() {
-            local key="$1"
-            local value="$2"
-            sed -i "s|^${key}=.*|${key}=\"${value}\"|" "$TARGET_FILE"
-          }
-
-          update_assignment ZLIB_VERSION "$ZLIB_VERSION"
-          update_assignment ZLIB_ARCHIVE "$ZLIB_ARCHIVE"
-          update_assignment ZLIB_URL "$ZLIB_URL"
-          update_assignment ZLIB_SHA256 "$ZLIB_SHA256"
-          update_assignment EXPAT_VERSION "$EXPAT_VERSION"
-          update_assignment EXPAT_TAG "$EXPAT_TAG"
-          update_assignment EXPAT_ARCHIVE "$EXPAT_ARCHIVE"
-          update_assignment EXPAT_URL "$EXPAT_URL"
-          update_assignment EXPAT_SHA256 "$EXPAT_SHA256"
-          update_assignment SQLITE_AUTOCONF_VERSION "$SQLITE_AUTOCONF_VERSION"
-          update_assignment SQLITE_VERSION "$SQLITE_VERSION"
-          update_assignment SQLITE_YEAR "$SQLITE_YEAR"
-          update_assignment SQLITE_ARCHIVE "$SQLITE_ARCHIVE"
-          update_assignment SQLITE_URL "$SQLITE_URL"
-          update_assignment SQLITE_SHA256 "$SQLITE_SHA256"
-          update_assignment CARES_VERSION "$CARES_VERSION"
-          update_assignment CARES_TAG "$CARES_TAG"
-          update_assignment CARES_ARCHIVE "$CARES_ARCHIVE"
-          update_assignment CARES_URL "$CARES_URL"
-          update_assignment CARES_SHA256 "$CARES_SHA256"
-          update_assignment LIBSSH2_VERSION "$LIBSSH2_VERSION"
-          update_assignment LIBSSH2_ARCHIVE "$LIBSSH2_ARCHIVE"
-          update_assignment LIBSSH2_URL "$LIBSSH2_URL"
-          update_assignment LIBSSH2_SHA256 "$LIBSSH2_SHA256"
-          update_assignment OPENSSL_VERSION "$OPENSSL_VERSION"
-          update_assignment OPENSSL_SERIES "$OPENSSL_SERIES"
-          update_assignment OPENSSL_ARCHIVE "$OPENSSL_ARCHIVE"
-          update_assignment OPENSSL_URL "$OPENSSL_URL"
-          update_assignment OPENSSL_SHA256 "$OPENSSL_SHA256"
-
-          git add "$TARGET_FILE"
-          echo "Synchronized $TARGET_FILE from upstream dependency baseline"
+          echo "Verified $TARGET_FILE against upstream dependency versions"
 
       - name: Commit updated gitlink
         if: steps.update.outputs.changed == 'true'

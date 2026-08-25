@@ -35,12 +35,12 @@ endef
 
 define Package/aria2-next-static/description
   aria2-next is a maintained aria2-compatible multi-protocol download
-  utility operated via command line. It supports HTTP/HTTPS, FTP, SFTP,
-  ED2K, BitTorrent, and Metalink.
+  utility operated via command line. It supports HTTP/HTTPS, SFTP, ED2K,
+  BitTorrent, and Metalink.
 
   This package ships a statically linked binary with Expat, SQLite,
-  c-ares, OpenSSL, libssh2, and zlib embedded. No external library
-  dependencies are required at runtime.
+  c-ares, OpenSSL, libssh2, zlib, curl, nghttp2, and libtorrent embedded.
+  No external library dependencies are required at runtime.
 endef
 
 define Package/aria2-next-static/conffiles
