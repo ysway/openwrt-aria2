@@ -121,7 +121,6 @@ log_info "Downloading dependency sources..."
 download_source "$ZLIB_URL" "$SRC_DIR/$ZLIB_ARCHIVE" "$ZLIB_SHA256"
 download_source "$EXPAT_URL" "$SRC_DIR/$EXPAT_ARCHIVE" "$EXPAT_SHA256"
 download_source "$SQLITE_URL" "$SRC_DIR/$SQLITE_ARCHIVE" "$SQLITE_SHA256"
-download_source "$CARES_URL" "$SRC_DIR/$CARES_ARCHIVE" "$CARES_SHA256"
 download_source "$OPENSSL_URL" "$SRC_DIR/$OPENSSL_ARCHIVE" "$OPENSSL_SHA256"
 download_source "$LIBSSH2_URL" "$SRC_DIR/$LIBSSH2_ARCHIVE" "$LIBSSH2_SHA256"
 
@@ -160,19 +159,6 @@ CHOST="$TARGET_HOST" CC="${TARGET_HOST}-gcc" AR="$TARGET_AR" RANLIB="$TARGET_RAN
     LDFLAGS="$COMMON_LINK_FLAGS $EXTRA_LIBS_STRING" \
     ./configure --host="$TARGET_HOST" --prefix="$PREFIX" --disable-shared --enable-static \
     --disable-readline
-make -j"$NPROC"
-make install
-
-# ── c-ares ──────────────────────────────────────────────────────────────────
-log_info "Building c-ares ${CARES_VERSION}"
-cd "$BUILDDIR"
-rm -rf "c-ares-${CARES_VERSION}"
-extract_source "$SRC_DIR/$CARES_ARCHIVE" "$BUILDDIR"
-cd "c-ares-${CARES_VERSION}"
-CHOST="$TARGET_HOST" CC="${TARGET_HOST}-gcc" AR="$TARGET_AR" RANLIB="$TARGET_RANLIB" \
-    CFLAGS="$COMMON_CFLAGS" LDFLAGS="$COMMON_LINK_FLAGS $EXTRA_LIBS_STRING" \
-    ./configure --host="$TARGET_HOST" --prefix="$PREFIX" --disable-shared --enable-static \
-    --disable-tests
 make -j"$NPROC"
 make install
 
@@ -296,10 +282,8 @@ cmake -S "$VENDOR_DIR/curl" -B build/curl-release \
     -DCURL_DISABLE_INSTALL=OFF \
     -DCURL_USE_PKGCONFIG=OFF \
     -DCURL_USE_CMAKECONFIG=OFF \
-    -DENABLE_ARES=ON \
-    -DCARES_USE_STATIC_LIBS=ON \
-    -DCARES_INCLUDE_DIR="$PREFIX/include" \
-    -DCARES_LIBRARY="$PREFIX/lib/libcares.a" \
+    -DENABLE_ARES=OFF \
+    -DENABLE_THREADED_RESOLVER=ON \
     -DCURL_USE_LIBSSH2=ON \
     -DLIBSSH2_USE_STATIC_LIBS=ON \
     -DLIBSSH2_INCLUDE_DIR="$PREFIX/include" \

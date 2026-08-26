@@ -38,8 +38,10 @@ define Package/aria2-next-static/description
   utility operated via command line. It supports HTTP/HTTPS, SFTP, ED2K,
   BitTorrent, and Metalink.
 
-  This package ships a statically linked binary with Expat, SQLite,
-  c-ares, OpenSSL, libssh2, zlib, curl, nghttp2, and libtorrent embedded.
+  This package ships a statically linked binary built with Expat, SQLite,
+  OpenSSL, libssh2, zlib, curl, nghttp2, Boost, spdlog, wslay, and libtorrent.
+  DNS is asynchronous through the core Boost.Asio system resolver and curl's
+  threaded resolver.
   No external library dependencies are required at runtime.
 endef
 

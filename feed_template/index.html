@@ -22,8 +22,8 @@
         <p class="eyebrow">OpenWrt Package Feed</p>
         <h1>aria2-next Static Feed</h1>
         <p class="lede">
-          Prebuilt static aria2-next packages for OpenWrt with native BitTorrent, Metalink, XML-RPC, Async DNS,
-          ED2K, HTTPS, and SFTP support from the validated expat, SQLite, c-ares, OpenSSL, libssh2, zlib, curl, nghttp2, and libtorrent build profile.
+          Prebuilt static aria2-next packages for OpenWrt with native BitTorrent, Metalink, XML-RPC, asynchronous DNS,
+          ED2K, HTTPS, and SFTP support from the validated expat, SQLite, OpenSSL, libssh2, zlib, curl, nghttp2, Boost, spdlog, wslay, and libtorrent build profile.
         </p>
         <div class="chip-row">
           <span class="chip">Fully static binaries</span>
@@ -191,7 +191,8 @@ service aria2-next start</pre>
           <h2>Build profile</h2>
           <p>
             These packages are built against official OpenWrt SDK container images and link aria2-next statically with
-            expat, SQLite, c-ares, OpenSSL, libssh2, zlib, curl, nghttp2, and libtorrent.
+            expat, SQLite, OpenSSL, libssh2, zlib, curl, nghttp2, Boost, spdlog, wslay, and libtorrent.
+            The core uses the Boost.Asio system resolver, while curl uses its threaded resolver, so DNS remains asynchronous.
           </p>
         </section>
 

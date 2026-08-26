@@ -6,35 +6,62 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+# Verification never receives a write token. The short synchronization job
+# receives one only after the candidate tag, manifest, build, and tests pass.
 permissions:
-  contents: write
+  actions: read
+  contents: read
+
+concurrency:
+  group: sync-upstream-${{ github.event.repository.default_branch }}
+  cancel-in-progress: false
 
 jobs:
-  sync:
-    name: Check for upstream aria2-next updates
-    # Git-only automation job; no Docker or privileged build steps required.
-    runs-on: ubuntu-slim
+  verify:
+    name: Verify newest aria2-next release
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      base_sha: ${{ steps.update.outputs.base_sha }}
+      build_needed: ${{ steps.build_status.outputs.needed }}
+      changed: ${{ steps.update.outputs.changed }}
+      new_sha: ${{ steps.update.outputs.new_sha }}
+      new_tag: ${{ steps.update.outputs.new_tag }}
     steps:
-      - name: Checkout repository
+      - name: Checkout repository without stored credentials
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           submodules: true
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
 
-      - name: Update submodule to latest upstream release tag
+      - name: Select newest stable upstream release
         id: update
         run: |
           set -euo pipefail
+
+          BASE_SHA=$(git rev-parse HEAD)
           OLD_SHA=$(git rev-parse --verify HEAD:aria2-next 2>/dev/null || git -C aria2-next rev-parse HEAD)
           OLD_REF=$(git -C aria2-next describe --tags --exact-match HEAD 2>/dev/null || echo "untagged-${OLD_SHA:0:12}")
 
           git -C aria2-next fetch --force --tags origin
-          LATEST_TAG=$(git -C aria2-next tag --list 'v*' --sort=-version:refname | head -n 1)
+
+          # Git reference names are externally controlled. Select only canonical
+          # stable SemVer tags before using the value in later workflow steps.
+          STABLE_TAG_PATTERN='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          LATEST_TAG=""
+          while IFS= read -r candidate_tag; do
+            if [[ "$candidate_tag" =~ $STABLE_TAG_PATTERN ]]; then
+              LATEST_TAG="$candidate_tag"
+              break
+            fi
+          done < <(git -C aria2-next tag --list 'v*' --sort=-version:refname)
 
           if [ -z "$LATEST_TAG" ]; then
-            echo "ERROR: Could not determine latest aria2-next release tag" >&2
+            echo "ERROR: Could not determine latest stable aria2-next release tag" >&2
             exit 1
           fi
 
@@ -45,26 +72,51 @@ jobs:
 
           git -C aria2-next checkout --detach "$LATEST_TAG"
           NEW_SHA=$(git -C aria2-next rev-parse HEAD)
-          NEW_REF=$(git -C aria2-next describe --tags --exact-match HEAD 2>/dev/null || echo "$LATEST_TAG")
-
-          git add aria2-next
 
           {
-            echo "old_sha=$OLD_SHA"
-            echo "old_tag=$OLD_REF"
-            echo "new_sha=$NEW_SHA"
-            echo "new_tag=$NEW_REF"
+            printf 'base_sha=%s\n' "$BASE_SHA"
+            printf 'new_sha=%s\n' "$NEW_SHA"
+            printf 'new_tag=%s\n' "$LATEST_TAG"
           } >> "$GITHUB_OUTPUT"
 
-          if git diff --cached --quiet -- aria2-next; then
+          if [ "$OLD_SHA" = "$NEW_SHA" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "aria2-next already pinned to latest upstream release tag: $NEW_REF"
+            echo "aria2-next already pinned to latest stable release: $LATEST_TAG"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "aria2-next updated: $OLD_REF ($OLD_SHA) -> $NEW_REF ($NEW_SHA)"
+            echo "aria2-next candidate: $OLD_REF ($OLD_SHA) -> $LATEST_TAG ($NEW_SHA)"
           fi
 
-      - name: Verify dependency versions against upstream baseline
+      - name: Check full-build status
+        id: build_status
+        uses: actions/github-script@v9
+        env:
+          BASE_SHA: ${{ steps.update.outputs.base_sha }}
+          CHANGED: ${{ steps.update.outputs.changed }}
+        with:
+          script: |
+            if (process.env.CHANGED === 'true') {
+              core.setOutput('needed', 'true');
+              return;
+            }
+
+            // A successful or active repository-dispatch run makes the current
+            // default-branch commit complete. Failed/missing runs are retried by
+            // the next scheduled sync, so push and dispatch need not be atomic.
+            const response = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-aria2.yml',
+              event: 'repository_dispatch',
+              head_sha: process.env.BASE_SHA,
+              per_page: 100
+            });
+            const covered = response.data.workflow_runs.some(run =>
+              run.conclusion === 'success' || run.status !== 'completed'
+            );
+            core.setOutput('needed', covered ? 'false' : 'true');
+
+      - name: Synchronize and test dependency manifest
         if: steps.update.outputs.changed == 'true'
         run: |
           set -euo pipefail
@@ -72,78 +124,175 @@ jobs:
           UPSTREAM_DEPS="aria2-next/packaging/dependencies.env"
           TARGET_FILE="build_scripts/versions.sh"
 
-          if [ ! -f "$UPSTREAM_DEPS" ]; then
-            echo "ERROR: Missing upstream dependency file: $UPSTREAM_DEPS" >&2
-            exit 1
-          fi
+          # The helper parses the external submodule manifest as data. It only
+          # auto-updates labels for sources already pinned by the new gitlink;
+          # downloaded archive/checksum changes remain a manual safety gate.
+          bash build_scripts/sync_dependency_manifest.sh \
+            "$UPSTREAM_DEPS" "$TARGET_FILE"
+          bash build_scripts/test_dependency_manifest.sh
+          git diff --check
 
-          # shellcheck source=/dev/null
-          . "$UPSTREAM_DEPS"
-
-          version_vars=(
-            ZLIB_VERSION
-            EXPAT_VERSION
-            SQLITE_VERSION
-            CARES_VERSION
-            LIBSSH2_VERSION
-            CURL_VERSION
-            NGHTTP2_VERSION
-            OPENSSL_VERSION
-            BOOST_VERSION
-            LIBTORRENT_VERSION
-          )
-          declare -A upstream_versions=()
-
-          for version_var in "${version_vars[@]}"; do
-            if [ -z "${!version_var:-}" ]; then
-              echo "ERROR: Failed to extract $version_var from $UPSTREAM_DEPS" >&2
-              exit 1
-            fi
-            upstream_versions["$version_var"]="${!version_var}"
-          done
-
-          # Upstream vendors dependency sources as of v2.6.0, so its baseline
-          # no longer provides the archives, URLs, or hashes needed by our
-          # OpenWrt cross-build. Keep that download metadata pinned locally and
-          # require a reviewed local baseline update when a version diverges.
-          # shellcheck source=/dev/null
-          . "$TARGET_FILE"
-
-          for version_var in "${version_vars[@]}"; do
-            target_version="${!version_var:-}"
-            if [ "$target_version" != "${upstream_versions[$version_var]}" ]; then
-              echo "ERROR: Dependency version mismatch for $version_var" >&2
-              echo "  upstream: ${upstream_versions[$version_var]}" >&2
-              echo "  local:    ${target_version:-<missing>}" >&2
-              echo "Review the new baseline and update $TARGET_FILE and any download metadata." >&2
-              exit 1
-            fi
-          done
-
-          echo "Verified $TARGET_FILE against upstream dependency versions"
-
-      - name: Commit updated gitlink
+      - name: Prepare isolated x86 verification directories
         if: steps.update.outputs.changed == 'true'
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: update aria2-next submodule to ${{ steps.update.outputs.new_tag }}"
-          git push origin HEAD:${{ github.event.repository.default_branch }}
+          mkdir -p \
+            "$RUNNER_TEMP/aria2-sync-cache/sources" \
+            "$RUNNER_TEMP/aria2-sync-cache/pip" \
+            "$RUNNER_TEMP/aria2-sync-output"
+          chmod -R 777 \
+            "$RUNNER_TEMP/aria2-sync-cache" \
+            "$RUNNER_TEMP/aria2-sync-output"
 
-      - name: Trigger build workflow
+      - name: Pull x86 OpenWrt SDK image
         if: steps.update.outputs.changed == 'true'
+        run: docker pull ghcr.io/openwrt/sdk:x86_64-V24.10.7
+
+      - name: Build and test x86 candidate
+        if: steps.update.outputs.changed == 'true'
+        env:
+          NEW_SHA: ${{ steps.update.outputs.new_sha }}
+        run: |
+          set -euo pipefail
+
+          # Upstream build code receives a read-only checkout and no write
+          # token. Build products and caches live in isolated runner paths.
+          docker run --rm --user root \
+            -v "$PWD:/work/repo:ro" \
+            -v "$RUNNER_TEMP/aria2-sync-output:/work/output" \
+            -v "$RUNNER_TEMP/aria2-sync-cache:/work/cache" \
+            -e PLATFORM=x86_64 \
+            -e OPENWRT_SDK_VERSION=24.10.7 \
+            -e BUILD_VERSION="sync-${NEW_SHA:0:8}" \
+            -e SOURCE_CACHE_DIR=/work/cache/sources \
+            -e PIP_CACHE_DIR=/work/cache/pip \
+            -e ARIA2_BUILD_TESTS=yes \
+            -e UPX_ENABLED=yes \
+            -e BUILD_APK=no \
+            -e TERM=xterm \
+            ghcr.io/openwrt/sdk:x86_64-V24.10.7 \
+            bash -c 'bash /work/repo/build_scripts/build_in_sdk.sh x86_64 && ctest --test-dir /work/build/aria2-next-build --output-on-failure'
+
+  synchronize:
+    name: Commit or dispatch verified synchronization
+    needs: verify
+    if: >-
+      needs.verify.outputs.changed == 'true' ||
+      needs.verify.outputs.build_needed == 'true'
+    runs-on: ubuntu-slim
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout verified base without stored credentials
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.verify.outputs.base_sha }}
+          submodules: true
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Recreate verified synchronization
+        env:
+          BASE_SHA: ${{ needs.verify.outputs.base_sha }}
+          CHANGED: ${{ needs.verify.outputs.changed }}
+          NEW_SHA: ${{ needs.verify.outputs.new_sha }}
+          NEW_TAG: ${{ needs.verify.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+
+          STABLE_TAG_PATTERN='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          [[ "$NEW_TAG" =~ $STABLE_TAG_PATTERN ]] || {
+            echo "ERROR: Refusing non-stable release tag: $NEW_TAG" >&2
+            exit 1
+          }
+          [ "$(git rev-parse HEAD)" = "$BASE_SHA" ] || {
+            echo "ERROR: Checked-out base does not match the verified commit" >&2
+            exit 1
+          }
+
+          git -C aria2-next fetch --force --tags origin
+          TAG_SHA=$(git -C aria2-next rev-parse --verify "${NEW_TAG}^{commit}")
+          [ "$TAG_SHA" = "$NEW_SHA" ] || {
+            echo "ERROR: $NEW_TAG moved after verification" >&2
+            exit 1
+          }
+          git -C aria2-next checkout --detach "$NEW_SHA"
+          git add aria2-next
+
+          bash build_scripts/sync_dependency_manifest.sh \
+            aria2-next/packaging/dependencies.env build_scripts/versions.sh
+          bash build_scripts/test_dependency_manifest.sh
+          git add build_scripts/versions.sh
+
+          unexpected=$(git diff --cached --name-only | \
+            grep -Ev '^(aria2-next|build_scripts/versions\.sh)$' || true)
+          if [ -n "$unexpected" ]; then
+            printf 'ERROR: Unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git diff --cached --check
+          if [ "$CHANGED" = "true" ]; then
+            if git diff --cached --quiet; then
+              echo "ERROR: Verified synchronization produced no commit changes" >&2
+              exit 1
+            fi
+          elif ! git diff --cached --quiet; then
+            echo "ERROR: Retry-only synchronization unexpectedly changed tracked files" >&2
+            exit 1
+          fi
+
+      - name: Commit verified synchronization
+        if: needs.verify.outputs.changed == 'true'
+        env:
+          NEW_TAG: ${{ needs.verify.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: sync aria2-next to $NEW_TAG"
+
+      - name: Push verified synchronization
+        if: needs.verify.outputs.changed == 'true'
+        env:
+          BASE_SHA: ${{ needs.verify.outputs.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          git check-ref-format "refs/heads/$TARGET_BRANCH"
+
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          echo "::add-mask::$auth"
+
+          remote_sha=$(GIT_CONFIG_COUNT=1 \
+            GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+            GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+            git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')
+          [ "$remote_sha" = "$BASE_SHA" ] || {
+            echo "ERROR: Default branch changed after candidate verification; retry the workflow" >&2
+            exit 1
+          }
+
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+            git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+
+      - name: Trigger full build workflow
         uses: actions/github-script@v9
+        env:
+          NEW_TAG: ${{ needs.verify.outputs.new_tag }}
+          NEW_SHA: ${{ needs.verify.outputs.new_sha }}
         with:
           script: |
             // Pushes created with GITHUB_TOKEN do not trigger other workflows,
-            // so dispatch the build explicitly after updating the default branch.
+            // so dispatch the full matrix only after the verified push.
             await github.rest.repos.createDispatchEvent({
               owner: context.repo.owner,
               repo: context.repo.repo,
               event_type: 'build-aria2-next',
               client_payload: {
-                tag: '${{ steps.update.outputs.new_tag }}',
-                sha: '${{ steps.update.outputs.new_sha }}'
+                tag: process.env.NEW_TAG,
+                sha: process.env.NEW_SHA
               }
             });

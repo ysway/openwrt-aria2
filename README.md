@@ -12,13 +12,13 @@ This repository owns the OpenWrt build, packaging, service integration, release,
 
 - **Self-contained binaries** — target libraries are linked statically to avoid firmware package dependency conflicts
 - **Broad protocol support** — HTTP(S), SFTP, BitTorrent, Metalink, XML-RPC, WebSocket RPC, and ED2K
-- **OpenSSL backend** — TLS support with static OpenSSL, plus c-ares async DNS
+- **OpenSSL backend** — TLS support with static OpenSSL, plus asynchronous DNS through the core Boost.Asio system resolver and curl's threaded resolver
 - **33 OpenWrt target architectures** — built with official OpenWrt SDK Docker images
 - **Dual package format** — `.ipk` for OPKG-based OpenWrt and standalone `.apk` for APK-based OpenWrt
 - **OpenWrt service integration** — procd init script and UCI configuration based on OpenWrt's official `net/aria2` model
 - **UPX compression with a safety net** — optional, verified after packing, and skipped on known-sensitive targets
 - **Auditable releases** — raw binaries, `BUILDINFO`, per-file hashes on the feed, and release `SHA256SUMS`
-- **Automated upstream tracking** — the sync workflow follows tagged `aria2-next` releases
+- **Automated upstream tracking** — the sync workflow follows stable tagged `aria2-next` releases after x86_64 verification
 
 ## Supported Architectures
 
@@ -70,7 +70,7 @@ wget -O- https://raw.githubusercontent.com/ysway/openwrt-aria2-next/master/setup
 For an auditable install, download `setup.sh`, inspect it, then run it. Optional overrides include:
 
 ```sh
-ARIA2_RELEASE_TAG=v2.6.0 ARIA2_ARCH=x86_64 sh setup.sh
+ARIA2_RELEASE_TAG=v2.6.2 ARIA2_ARCH=x86_64 sh setup.sh
 ARIA2_INSTALL_MODE=raw sh setup.sh
 ARIA2_REPO=owner/fork sh setup.sh
 ```
@@ -82,7 +82,7 @@ ARIA2_REPO=owner/fork sh setup.sh
 Use this on OPKG-based OpenWrt:
 
 ```sh
-VERSION=2.6.0
+VERSION=2.6.2
 TAG="v${VERSION}"
 ARCH=x86_64
 
@@ -97,7 +97,7 @@ Replace the example version and architecture with values from the [latest releas
 Use this on APK-based OpenWrt:
 
 ```sh
-VERSION=2.6.0
+VERSION=2.6.2
 TAG="v${VERSION}"
 ARCH=x86_64
 
@@ -124,7 +124,7 @@ The site root is a landing page. The architecture suffix is required in the feed
 ### Option 5: Install the raw binary
 
 ```sh
-VERSION=2.6.0
+VERSION=2.6.2
 TAG="v${VERSION}"
 ARCH=x86_64
 
@@ -180,8 +180,10 @@ The UCI section type remains `config aria2` to match OpenWrt's official schema. 
 
 ```text
 sync-upstream.yml (daily or manual)
-  └─ Find the newest aria2-next v* tag
-  └─ Verify the local dependency baseline and update the submodule
+  └─ Select the newest stable aria2-next SemVer tag
+  └─ Parse and reconcile the dependency manifest as untrusted data
+  └─ Build x86_64 and run upstream tests with a read-only checkout
+  └─ Revalidate the exact tag/SHA in a fresh write job and update the submodule
   └─ Dispatch build-aria2.yml
        │
        ▼
@@ -205,24 +207,27 @@ APK packaging job
        └─► release job: publish IPK, APK, binary, and SHA256SUMS assets
 ```
 
-Scheduled upstream builds publish automatically. Manual workflow runs are safe previews by default: they upload Actions artifacts but do not replace the feed or release unless the `publish` input is explicitly enabled. Partial target selections cannot be published because that would erase architectures from the regenerated feed.
+Scheduled upstream builds publish automatically only after the isolated x86_64 candidate build and upstream test suite pass. The verification job has read-only repository permission; a separate short write job recreates the data-only manifest change, rejects unexpected staged paths or a moved tag/default branch, and then commits. When no matching full-matrix run remains active, the next scheduled run retries a missing or failed build for the exact default-branch commit, so a transient dispatch failure cannot leave the release/feed permanently stale. Manual build-workflow runs are safe previews by default: they upload Actions artifacts but do not replace the feed or release unless the `publish` input is explicitly enabled. Partial target selections cannot be published because that would erase architectures from the regenerated feed.
 
 ### Static dependencies
 
-Dependency versions in [`build_scripts/versions.sh`](build_scripts/versions.sh) track the upstream [`aria2-next/packaging/dependencies.env`](aria2-next/packaging/dependencies.env) baseline. Download URLs and SHA-256 hashes are pinned locally because current upstream releases vendor their dependency sources instead of publishing download metadata.
+Dependency versions in [`build_scripts/versions.sh`](build_scripts/versions.sh) track the upstream [`aria2-next/packaging/dependencies.env`](aria2-next/packaging/dependencies.env) baseline. The manifest explicitly classifies dependencies as downloaded, vendored, or upstream-only. Vendored version labels can follow a new submodule tag automatically; downloaded versions stop synchronization until their internally consistent archive, HTTPS URL, and SHA-256 tuple is reviewed. Added or removed dependency fields also stop for a build-graph review. The upstream manifest is parsed strictly as data and is never sourced by the write-enabled workflow. Exact pins are kept in `versions.sh` and recorded in each artifact's `BUILDINFO`, avoiding a second hard-coded version list in this document.
 
-| Library | Version | Purpose |
+| Library | Source policy | Purpose |
 |:---|:---|:---|
-| zlib | 1.3.2 | Compression |
-| expat | 2.8.1 | XML and Metalink parsing |
-| SQLite | 3.53.1 | Cookie and session-related storage |
-| c-ares | 1.34.5 | Async DNS |
-| OpenSSL | 3.5.6 | TLS and cryptography |
-| libssh2 | 1.11.1 | SFTP |
-| curl | 8.21.0 | HTTP(S) and SFTP transfer engine |
-| nghttp2 | 1.70.0 | HTTP/2 framing for curl |
-| Boost | 1.91.0 | Headers used by libtorrent |
-| libtorrent-rasterbar | 2.1.1 | BitTorrent engine |
+| zlib | Downloaded, SHA-256 pinned | Compression |
+| expat | Downloaded, SHA-256 pinned | XML and Metalink parsing |
+| SQLite | Downloaded, SHA-256 pinned | Cookie and session-related storage |
+| OpenSSL | Downloaded, SHA-256 pinned | TLS and cryptography |
+| libssh2 | Downloaded, SHA-256 pinned | SFTP |
+| curl | Vendored by the submodule | HTTP(S) and SFTP transfer engine |
+| nghttp2 | Vendored by the submodule | HTTP/2 framing for curl |
+| Boost | Vendored by the submodule | Header-only asynchronous networking for the core and libtorrent |
+| spdlog | Vendored by the submodule | Header-only logging |
+| wslay | Vendored by the submodule | WebSocket framing |
+| libtorrent-rasterbar | Vendored by the submodule | BitTorrent engine |
+
+DNS is always asynchronous: aria2-next's core uses the Boost.Asio system resolver, while curl uses its threaded resolver. DNS servers are managed by the operating system.
 
 FTP was removed upstream in aria2-next 2.6.0. BitTorrent encryption is provided by aria2-next and libtorrent's maintained implementations. Unused GnuTLS, nettle, GMP, libgcrypt, libuv, libxml2, jemalloc, and tcmalloc paths are disabled.
 
@@ -298,7 +303,9 @@ Release builds configure upstream with `BUILD_TESTING=OFF` and request the `aria
 |:---|:---|
 | `build_in_sdk.sh` | Container entrypoint and full target pipeline |
 | `common.sh` | Shared variables, verified downloads, and helper functions |
-| `versions.sh` | Dependency versions, URLs, and hashes |
+| `versions.sh` | Dependency policy, versions, URLs, and hashes |
+| `sync_dependency_manifest.sh` | Safe upstream manifest reconciliation |
+| `test_dependency_manifest.sh` | Dependency policy regression tests |
 | `target-map.sh` | Platform to compiler/OpenSSL/UPX mapping |
 | `build_deps_static.sh` | Static dependency build |
 | `build_static_aria2.sh` | aria2-next CMake configuration and selected-target build |
@@ -389,7 +396,7 @@ openwrt-aria2-next/
 4. Use a one-target Docker build for build-system or dependency changes.
 5. Submit a pull request describing affected OpenWrt versions and architectures.
 
-When changing dependency versions, update the upstream dependency baseline first and keep `build_scripts/versions.sh` synchronized. When changing package names, paths, workflow inputs, or artifacts, update this README and the feed template in the same change.
+When changing dependencies, classify the version field in `build_scripts/versions.sh`. Downloaded sources also require a reviewed archive, URL, and SHA-256 tuple; structural additions or removals require adapting the build graph before synchronization can continue. When changing package names, paths, workflow inputs, or artifacts, update this README and the feed template in the same change.
 
 ## Acknowledgements
 

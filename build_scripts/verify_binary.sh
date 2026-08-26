@@ -40,7 +40,9 @@ else
     echo "$NEEDED"
     # Check if any of our embedded libs leaked as dynamic deps
     LEAKED=""
-    for lib in libssl libcrypto libssh2 libexpat libsqlite3 libcares libz; do
+    for lib in \
+        libssl libcrypto libssh2 libexpat libsqlite3 libz \
+        libcurl libnghttp2 libtorrent-rasterbar libwslay; do
         if echo "$NEEDED" | grep -qi "$lib"; then
             LEAKED="$LEAKED $lib"
         fi

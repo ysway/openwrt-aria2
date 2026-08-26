@@ -3,6 +3,34 @@
 # URLs and SHA-256 hashes are maintained here because upstream vendors its
 # dependency sources and no longer publishes that metadata in dependencies.env.
 
+# Version changes in this group require a reviewed archive, URL, and checksum.
+DOWNLOADED_VERSION_VARS=(
+    ZLIB_VERSION
+    EXPAT_VERSION
+    SQLITE_VERSION
+    LIBSSH2_VERSION
+    OPENSSL_VERSION
+)
+
+# These sources are fixed by the aria2-next gitlink, so sync-upstream may update
+# their descriptive version labels without introducing a new download.
+VENDORED_VERSION_VARS=(
+    CURL_VERSION
+    NGHTTP2_VERSION
+    BOOST_VERSION
+    LIBTORRENT_VERSION
+    SPDLOG_VERSION
+    WSLAY_VERSION
+)
+
+# These fields describe test or non-OpenWrt toolchains and are classified only
+# so a newly introduced release dependency cannot pass unnoticed.
+IGNORED_UPSTREAM_VERSION_VARS=(
+    DOCTEST_VERSION
+    ANDROID_NDK_VERSION
+    LLVM_MINGW_VERSION
+)
+
 ZLIB_VERSION="1.3.2"
 ZLIB_ARCHIVE="zlib-1.3.2.tar.gz"
 ZLIB_URL="https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz"
@@ -21,12 +49,6 @@ SQLITE_ARCHIVE="sqlite-autoconf-3530100.tar.gz"
 SQLITE_URL="https://www.sqlite.org/2026/sqlite-autoconf-3530100.tar.gz"
 SQLITE_SHA256="83e6b2020a034e9a7ad4a72feea59e1ad52f162e09cbd26735a3ffb98359fc4f"
 
-CARES_VERSION="1.34.5"
-CARES_TAG="v1.34.5"
-CARES_ARCHIVE="c-ares-1.34.5.tar.gz"
-CARES_URL="https://github.com/c-ares/c-ares/releases/download/v1.34.5/c-ares-1.34.5.tar.gz"
-CARES_SHA256="7d935790e9af081c25c495fd13c2cfcda4792983418e96358ef6e7320ee06346"
-
 LIBSSH2_VERSION="1.11.1"
 LIBSSH2_ARCHIVE="libssh2-1.11.1.tar.bz2"
 LIBSSH2_URL="https://github.com/libssh2/libssh2/releases/download/libssh2-1.11.1/libssh2-1.11.1.tar.bz2"
@@ -36,6 +58,8 @@ CURL_VERSION="8.21.0"
 NGHTTP2_VERSION="1.70.0"
 BOOST_VERSION="1.91.0"
 LIBTORRENT_VERSION="2.1.1"
+SPDLOG_VERSION="1.17.0"
+WSLAY_VERSION="1.1.1"
 
 OPENSSL_VERSION="3.5.6"
 OPENSSL_SERIES="3.5"

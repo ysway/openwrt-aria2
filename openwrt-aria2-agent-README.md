@@ -14,21 +14,24 @@ Build and publish static `aria2-next` packages for OpenWrt using official OpenWr
 - Build system: CMake 3.25+ with Ninja
 - Produced executable: `aria2-next`
 - Dependency baseline: `aria2-next/packaging/dependencies.env`
+- Dependency policy and trusted download metadata: `build_scripts/versions.sh`
 
-Current dependency pins:
+Dependency inventory (read exact pins from `build_scripts/versions.sh` and
+artifact `BUILDINFO` files):
 
-| Dependency | Version |
+| Dependency | Source policy |
 | --- | --- |
-| zlib | 1.3.2 |
-| expat | 2.8.1 |
-| SQLite | 3.53.1 |
-| c-ares | 1.34.5 |
-| libssh2 | 1.11.1 |
-| curl | 8.21.0 |
-| nghttp2 | 1.70.0 |
-| Boost | 1.91.0 |
-| libtorrent-rasterbar | 2.1.1 |
-| OpenSSL | 3.5.6 |
+| zlib | Downloaded, SHA-256 pinned |
+| expat | Downloaded, SHA-256 pinned |
+| SQLite | Downloaded, SHA-256 pinned |
+| libssh2 | Downloaded, SHA-256 pinned |
+| OpenSSL | Downloaded, SHA-256 pinned |
+| curl | Vendored by the submodule |
+| nghttp2 | Vendored by the submodule |
+| Boost | Vendored by the submodule |
+| spdlog | Vendored by the submodule |
+| wslay | Vendored by the submodule |
+| libtorrent-rasterbar | Vendored by the submodule |
 
 ## OpenWrt Packaging Surface
 
@@ -76,10 +79,20 @@ docker run --rm --user root \
 - Downloaded dependency archives are accepted only after matching the SHA-256
   values in `build_scripts/versions.sh`; the remaining dependencies use sources
   vendored by the pinned aria2-next submodule.
+- `sync_dependency_manifest.sh` parses the external upstream manifest as data,
+  updates vendored version labels, and fails closed for downloaded-version or
+  structural dependency changes. Keep its policy regression test passing.
+- `sync-upstream.yml` verifies the candidate in a read-only x86_64 build job,
+  then recreates only the gitlink/manifest diff in a fresh write job. Keep tag
+  and commit outputs in environment variables rather than interpolating them
+  into shell or JavaScript source. Its build-status reconciliation retries a
+  missing or failed full-matrix dispatch for the exact default-branch SHA.
 - Preserve OpenSSL `gcc-ar`, `gcc-ranlib`, and `gcc-nm` wrappers for LTO.
-- The CMake build enables OpenSSL, zlib, expat, SQLite3, c-ares, libssh2,
-  curl, nghttp2, libtorrent, BitTorrent, Metalink, XML-RPC, and WebSocket
-  support. Boost headers come from the upstream vendored dependency tree.
+- The CMake build enables OpenSSL, zlib, expat, SQLite3, libssh2, curl,
+  nghttp2, libtorrent, BitTorrent, Metalink, XML-RPC, and WebSocket support.
+  Vendored Boost provides the core Boost.Asio system resolver and libtorrent
+  headers; vendored spdlog and wslay provide logging and WebSocket framing.
+  curl uses its threaded resolver, so DNS remains asynchronous throughout.
 - The local OpenWrt profile explicitly disables GnuTLS, nettle, GMP, libgcrypt, libuv, libxml2, jemalloc, and tcmalloc.
 
 ## Package Format Lessons
@@ -109,6 +122,7 @@ sh -n package/aria2-next-static/files/aria2-next.init \
   package/aria2-next-static/files/postinst \
   package/aria2-next-static/files/prerm
 sh build_scripts/test_aria2_init.sh
+bash build_scripts/test_dependency_manifest.sh
 bash build_scripts/ci_matrix.sh x86_64,aarch64_cortex-a53
 ```
 
