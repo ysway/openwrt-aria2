@@ -1,0 +1,19 @@
+Package: aria2-next-static
+Version: 2.6.8-1
+Architecture: aarch64_cortex-a72
+Maintainer: openwrt-aria2-next
+Description: aria2-next download utility (statically linked)
+ A maintained aria2-compatible download utility with ED2K, BitTorrent,
+ Metalink, and HTTP/HTTPS/SFTP support. This package ships a statically
+ linked aria2-next binary built with Expat, SQLite, OpenSSL, libssh2,
+ zlib, curl, nghttp2, Boost, spdlog, wslay, and libtorrent. DNS is
+ asynchronous through the core Boost.Asio system resolver and curl's threaded
+ resolver.
+Installed-Size: 4290560
+Section: net
+Priority: optional
+Filename: aria2-next-static_2.6.8-1_aarch64_cortex-a72.ipk
+Size: 4272448
+MD5Sum: 8f0abff66ecddd934bac6a7f9e348587
+SHA256sum: 036b47df9231bb2605a0f8da34e5d447aaf37d271e937be47857429635fcd734
+

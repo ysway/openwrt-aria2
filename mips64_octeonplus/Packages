@@ -1,0 +1,19 @@
+Package: aria2-next-static
+Version: 2.6.8-1
+Architecture: mips64_octeonplus
+Maintainer: openwrt-aria2-next
+Description: aria2-next download utility (statically linked)
+ A maintained aria2-compatible download utility with ED2K, BitTorrent,
+ Metalink, and HTTP/HTTPS/SFTP support. This package ships a statically
+ linked aria2-next binary built with Expat, SQLite, OpenSSL, libssh2,
+ zlib, curl, nghttp2, Boost, spdlog, wslay, and libtorrent. DNS is
+ asynchronous through the core Boost.Asio system resolver and curl's threaded
+ resolver.
+Installed-Size: 13383680
+Section: net
+Priority: optional
+Filename: aria2-next-static_2.6.8-1_mips64_octeonplus.ipk
+Size: 5429482
+MD5Sum: 35a0a20ee24f03aaab64605387f2db6a
+SHA256sum: a933abe502278a16115603e97567dd91a01432ad109a7d83d17c26f663b30f5e
+
